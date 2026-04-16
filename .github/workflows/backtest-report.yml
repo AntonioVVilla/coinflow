@@ -1,0 +1,121 @@
+name: Backtest Report
+
+on:
+  pull_request:
+    paths:
+      - 'bot/strategies/**'
+      - 'bot/engine/backtest.py'
+      - 'bot/engine/risk.py'
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    # Only run if Coinbase secrets are configured
+    if: ${{ vars.BACKTEST_ENABLED == 'true' }}
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run backtests
+        id: backtest
+        env:
+          COINBASE_API_KEY: ${{ secrets.COINBASE_API_KEY }}
+          COINBASE_API_SECRET: ${{ secrets.COINBASE_API_SECRET }}
+          PAPER_MODE: 'true'
+        run: |
+          python - <<'EOF' > backtest_results.json
+          import asyncio, json, sys
+          sys.path.insert(0, '.')
+          from bot.engine.backtest import run_backtest
+
+          async def main():
+              results = {}
+              for strategy, params in [
+                  ("dca",  {"symbol": "BTC/USD", "amount_usd": 50, "interval_hours": 24}),
+                  ("grid", {"symbol": "BTC/USD", "lower_price": 50000, "upper_price": 70000,
+                             "num_grids": 10, "amount_per_grid": 0.001}),
+              ]:
+                  r = await run_backtest(
+                      strategy_name=strategy,
+                      symbol="BTC/USD",
+                      params=params,
+                      initial_quote=1000.0,
+                      timeframe="1h",
+                      candles=500,
+                  )
+                  results[strategy] = r
+              print(json.dumps(results))
+
+          asyncio.run(main())
+          EOF
+
+      - name: Post comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const raw = fs.readFileSync('backtest_results.json', 'utf8');
+            const results = JSON.parse(raw);
+
+            function fmt(r) {
+              if (!r || r.ok === false) return '❌ Error: ' + (r?.error ?? 'unknown');
+              const arrow = r.vs_hodl_pct >= 0 ? '▲' : '▼';
+              return [
+                `| Return | **${r.total_return_pct}%** (${r.total_return_usd > 0 ? '+' : ''}$${r.total_return_usd}) |`,
+                `| vs HODL | ${arrow} ${r.vs_hodl_pct}% |`,
+                `| Trades | ${r.num_trades} (${r.num_buys} buys / ${r.num_sells} sells) |`,
+                `| Win rate | ${r.win_rate_pct}% |`,
+                `| Max drawdown | ${r.max_drawdown_pct}% |`,
+                `| Fees paid | $${r.total_fees} |`,
+              ].join('\n');
+            }
+
+            const body = [
+              '## Backtest Report (500 candles × 1h, $1,000 initial)',
+              '',
+              '### DCA (BTC/USD — $50 every 24h)',
+              '| Metric | Value |',
+              '|--------|-------|',
+              fmt(results.dca),
+              '',
+              '### Grid (BTC/USD — $50k–$70k, 10 grids)',
+              '| Metric | Value |',
+              '|--------|-------|',
+              fmt(results.grid),
+              '',
+              `> Generated on ${new Date().toISOString().split('T')[0]} — past performance is not indicative of future results.`,
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body.startsWith('## Backtest Report'));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

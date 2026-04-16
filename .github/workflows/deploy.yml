@@ -1,0 +1,77 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options: [production]
+
+# Only one deploy at a time
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    # Requires repository secrets: VPS_HOST, VPS_USER, VPS_SSH_KEY
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy via SSH
+        env:
+          HOST: ${{ secrets.VPS_HOST }}
+          USER: ${{ secrets.VPS_USER }}
+          APP_DIR: ${{ vars.VPS_APP_DIR || '~/coinflow' }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$USER@$HOST" bash <<REMOTE
+            set -e
+            echo "==> Updating code..."
+            cd $APP_DIR
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "==> Pulling new Docker image..."
+            docker compose pull
+
+            echo "==> Restarting with zero-downtime..."
+            docker compose up -d --remove-orphans
+
+            echo "==> Waiting for healthcheck..."
+            sleep 8
+            curl -sf http://localhost:8080/api/health || (docker compose logs --tail=30 && exit 1)
+
+            echo "==> Cleaning old images..."
+            docker image prune -f
+
+            echo "==> Deploy done."
+          REMOTE
+
+      - name: Notify success
+        if: success()
+        run: |
+          echo "✅ Deploy to ${{ secrets.VPS_HOST }} completed successfully."
+
+      - name: Notify failure
+        if: failure()
+        run: |
+          echo "❌ Deploy FAILED. Check logs above."
+          exit 1
