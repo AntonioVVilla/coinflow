@@ -1,0 +1,141 @@
+# ============================================================
+# CRITICAL: credentials and sensitive data
+# ============================================================
+# Environment files with any real values
+.env
+.env.*
+!.env.example
+
+# Encryption key (CRITICAL - if leaked, all stored creds are compromised)
+secret.key
+*.key
+!*.pub.key
+
+# Database (contains encrypted API keys + password hashes)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Data volume (DB + secret.key + logs)
+data/
+!data/.gitkeep
+
+# Logs (may contain tokens or sensitive request data)
+*.log
+logs/
+
+# Backups
+*.bak
+*.backup
+*.dump
+backups/
+cryptobot_backup_*.tar.gz
+
+# Exports that may contain private trade history
+trades_*.csv
+*.csv
+!docs/**/*.csv
+
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+MANIFEST
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+ENV/
+
+# Testing / coverage
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+.tox/
+htmlcov/
+.hypothesis/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# mypy / pyre / pyright
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pyright/
+
+# ============================================================
+# IDEs & Editors
+# ============================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+*.sublime-project
+*.sublime-workspace
+.fleet/
+
+# ============================================================
+# Docker / containers
+# ============================================================
+# Keep compose file, ignore local overrides
+docker-compose.override.yml
+docker-compose.override.yaml
+.docker/
+
+# ============================================================
+# Node / frontend (by si agregamos build)
+# ============================================================
+node_modules/
+.npm/
+.pnpm-store/
+yarn-error.log
+npm-debug.log*
+
+# ============================================================
+# OS / misc
+# ============================================================
+*.pid
+*.seed
+.tmp/
+tmp/
+temp/
+
+# ============================================================
+# AI assistants / local config
+# ============================================================
+.claude/
+.cursor/
+.aider*

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="40" fill="#0a0c12"/>
+  <circle cx="96" cy="96" r="60" fill="none" stroke="url(#g)" stroke-width="8"/>
+  <path d="M 70 96 L 90 76 L 90 86 L 120 86 L 120 106 L 90 106 L 90 116 Z" fill="url(#g)"/>
+  <text x="96" y="160" text-anchor="middle" fill="#6366f1" font-family="sans-serif" font-weight="700" font-size="18">CRYPTO</text>
+</svg>

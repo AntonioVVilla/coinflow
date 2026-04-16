@@ -1,0 +1,99 @@
+# Production docker compose.
+# Usage:
+#   cp .env.production.example .env
+#   (edit .env with your domain)
+#   docker compose -f docker-compose.prod.yml up -d
+
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PAPER_MODE=${PAPER_MODE:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - bot-data:/app/data
+    # No ports exposed directly - Caddy handles that
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # Resource limits (comfortable for a personal bot on a 1-2 GB VPS)
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          memory: 128M
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - internal
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3 (QUIC)
+    environment:
+      - DOMAIN=${DOMAIN:?DOMAIN is required - edit .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - internal
+    depends_on:
+      - bot
+
+  # Optional: automatic backups daily at 3 AM
+  backup:
+    image: alpine:3.19
+    restart: unless-stopped
+    profiles: ["backup"]
+    volumes:
+      - bot-data:/data:ro
+      - ./backups:/backups
+    entrypoint: /bin/sh
+    command: >
+      -c "apk add --no-cache sqlite tzdata &&
+      while true; do
+        T=$$(date +%Y%m%d_%H%M%S);
+        mkdir -p /backups;
+        sqlite3 /data/bot.db \".backup '/backups/bot_$$T.db'\";
+        cp /data/secret.key /backups/secret_$$T.key 2>/dev/null || true;
+        find /backups -name 'bot_*.db' -mtime +30 -delete;
+        find /backups -name 'secret_*.key' -mtime +30 -delete;
+        echo \"[$$(date)] Backup done: bot_$$T.db\";
+        sleep 86400;
+      done"
+    networks:
+      - internal
+
+volumes:
+  bot-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  internal:
+    driver: bridge

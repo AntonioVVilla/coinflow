@@ -1,0 +1,20 @@
+services:
+  bot:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - bot-data:/app/data
+    env_file:
+      - .env
+    environment:
+      - PAPER_MODE=true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  bot-data:

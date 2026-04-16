@@ -1,0 +1,26 @@
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Database
+sqlalchemy[asyncio]==2.0.36
+aiosqlite==0.20.0
+
+# Exchange
+ccxt==4.5.48
+
+# Scheduler
+apscheduler==3.10.4
+
+# Security
+cryptography==44.0.0
+
+# Notifications
+aiosmtplib==3.0.2
+aiohttp==3.11.11
+
+# Config
+pydantic-settings==2.7.1
+
+# Utilities
+python-dotenv==1.0.1

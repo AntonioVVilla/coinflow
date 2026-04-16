@@ -1,0 +1,53 @@
+# Sensitive files - NEVER build these into the image
+.env
+.env.*
+!.env.example
+secret.key
+*.key
+
+# Data volume (mounted at runtime)
+data/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+
+# Virtual envs
+venv/
+.venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# Docs and CI
+README.md
+SECURITY.md
+CONTRIBUTING.md
+LICENSE
+docs/
+.github/
+
+# AI assistants
+.claude/
+.cursor/
+
+# Local overrides
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# Logs
+*.log
+logs/

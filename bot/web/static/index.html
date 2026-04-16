@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CryptoBot</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" type="image/svg+xml" href="/static/icon-192.svg">
+    <link rel="apple-touch-icon" href="/static/icon-192.svg">
+    <meta name="theme-color" content="#6366f1">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1/dist/chartjs-chart-financial.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body x-data="app()" x-init="init()">
+
+<!-- Login overlay -->
+<div class="auth-overlay" x-show="authRequired && !authenticated" x-cloak>
+    <div class="auth-box">
+        <div class="logo" style="font-size:28px;margin-bottom:8px">CryptoBot</div>
+        <p class="sub" style="margin-bottom:20px" x-text="hasPassword ? 'Ingresa tu password' : 'Crea un password para proteger el acceso'"></p>
+
+        <template x-if="!hasPassword">
+            <div>
+                <div class="form-group">
+                    <label>Nuevo password (minimo 4 caracteres)</label>
+                    <input type="password" x-model="loginPass" @keydown.enter="setupPassword()">
+                </div>
+                <button class="btn btn-primary" style="width:100%" @click="setupPassword()">Crear password</button>
+            </div>
+        </template>
+        <template x-if="hasPassword">
+            <div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" x-model="loginPass" @keydown.enter="doLogin()" autofocus>
+                </div>
+                <button class="btn btn-primary" style="width:100%" @click="doLogin()">Entrar</button>
+            </div>
+        </template>
+        <div x-show="loginError" class="alert alert-error" style="margin-top:12px" x-text="loginError"></div>
+    </div>
+</div>
+
+<!-- Toast notifications -->
+<div class="toast-container">
+    <template x-for="t in toasts" :key="t.id">
+        <div class="toast" :class="'toast-' + t.type" x-text="t.msg"></div>
+    </template>
+</div>
+
+<header x-show="!authRequired || authenticated">
+    <div class="container">
+        <div style="display:flex;align-items:center;gap:12px">
+            <span class="logo">CryptoBot</span>
+            <span class="badge" :class="dashboard.paper_mode ? 'badge-paper' : 'badge-live'"
+                  x-text="dashboard.paper_mode ? 'PAPER' : 'LIVE'"></span>
+            <span class="ws-indicator" :class="wsConnected ? 'ws-on' : 'ws-off'"
+                  :title="wsConnected ? 'Conectado en tiempo real' : 'Sin conexion en vivo'"></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+            <button class="btn btn-sm btn-danger kill-btn" @click="triggerKillSwitch()">KILL SWITCH</button>
+            <div class="chip-group">
+                <button class="chip" :class="currency === 'USD' && 'active'" @click="setCurrency('USD')">USD</button>
+                <button class="chip" :class="currency === 'EUR' && 'active'" @click="setCurrency('EUR')">EUR</button>
+            </div>
+            <nav>
+                <button :class="page === 'dashboard' && 'active'" @click="setPage('dashboard')">Dashboard</button>
+                <button :class="page === 'strategies' && 'active'" @click="setPage('strategies')">Estrategias</button>
+                <button :class="page === 'trades' && 'active'" @click="setPage('trades')">Operaciones</button>
+                <button :class="page === 'account' && 'active'" @click="setPage('account')">Cuenta</button>
+                <button :class="page === 'risk' && 'active'" @click="setPage('risk')">Riesgo</button>
+                <button :class="page === 'settings' && 'active'" @click="setPage('settings')">Config</button>
+                <button @click="doLogout()" x-show="authRequired" class="btn-outline" style="margin-left:8px">Salir</button>
+            </nav>
+        </div>
+    </div>
+</header>
+
+<main class="container" x-show="!authRequired || authenticated">
+
+    <!-- Risk banner if paused -->
+    <template x-if="riskConfig.paused_until && new Date(riskConfig.paused_until) > new Date()">
+        <div class="alert alert-error" style="margin-top:16px">
+            ⚠ Trading pausado por circuit breaker hasta <strong x-text="new Date(riskConfig.paused_until).toLocaleString()"></strong>
+            <button class="btn btn-sm btn-outline" @click="resumeTrading()" style="margin-left:12px">Reanudar</button>
+        </div>
+    </template>
+
+    <!-- ============= DASHBOARD ============= -->
+    <div class="page" :class="page === 'dashboard' && 'active'">
+        <div class="grid grid-4" style="margin-top:20px">
+            <div class="card kpi">
+                <h3>Portfolio Total</h3>
+                <div class="value" x-text="money(dashboard.total_usd)"></div>
+                <div class="sub" :style="{color: pnlColor(dashboard.stats?.realized_pnl)}">
+                    <span x-text="(dashboard.stats?.realized_pnl >= 0 ? '+' : '') + money(dashboard.stats?.realized_pnl || 0)"></span>
+                    P&L realizado
+                </div>
+            </div>
+            <div class="card kpi">
+                <h3 x-text="'BTC/' + currency"></h3>
+                <div class="value" x-text="money(dashboard.prices?.['BTC/USD'] || 0)"></div>
+                <div class="sub" x-text="(dashboard.balances?.BTC?.total || 0).toFixed(8) + ' BTC'"></div>
+            </div>
+            <div class="card kpi">
+                <h3 x-text="'ETH/' + currency"></h3>
+                <div class="value" x-text="money(dashboard.prices?.['ETH/USD'] || 0)"></div>
+                <div class="sub" x-text="(dashboard.balances?.ETH?.total || 0).toFixed(8) + ' ETH'"></div>
+            </div>
+            <div class="card kpi">
+                <h3>Estrategias Activas</h3>
+                <div class="value" x-text="Object.keys(dashboard.strategies || {}).length"></div>
+                <div class="sub" x-text="dashboard.recent_trades?.length + ' trades recientes'"></div>
+            </div>
+        </div>
+
+        <div class="grid grid-2">
+            <div class="card chart-card">
+                <div class="card-header">
+                    <h3>Portfolio Value</h3>
+                    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+                        <div class="chip-group">
+                            <button class="chip" :class="portfolioRange === 1 && 'active'" @click="changePortfolioRange(1)">1h</button>
+                            <button class="chip" :class="portfolioRange === 6 && 'active'" @click="changePortfolioRange(6)">6h</button>
+                            <button class="chip" :class="portfolioRange === 24 && 'active'" @click="changePortfolioRange(24)">24h</button>
+                            <button class="chip" :class="portfolioRange === 168 && 'active'" @click="changePortfolioRange(168)">7d</button>
+                            <button class="chip" :class="portfolioRange === 720 && 'active'" @click="changePortfolioRange(720)">30d</button>
+                            <button class="chip" :class="portfolioRange === 0 && 'active'" @click="changePortfolioRange(0)">Todo</button>
+                        </div>
+                        <div class="chip-group" title="Escala del eje Y">
+                            <button class="chip" :class="portfolioScale === 'auto' && 'active'" @click="changePortfolioScale('auto')" title="Zoom ajustado al rango de datos">Zoom</button>
+                            <button class="chip" :class="portfolioScale === 'zero' && 'active'" @click="changePortfolioScale('zero')" title="Escala desde $0">Desde 0</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-container"><canvas id="chartPortfolio"></canvas></div>
+            </div>
+            <div class="card chart-card">
+                <div class="card-header"><h3>Asset Allocation</h3></div>
+                <div class="chart-container"><canvas id="chartAllocation"></canvas></div>
+            </div>
+        </div>
+
+        <div class="grid grid-2">
+            <div class="card chart-card">
+                <div class="card-header">
+                    <h3 x-text="priceSymbol.replace('USD', currency) + ' - Candlestick'"></h3>
+                    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+                        <div class="chip-group">
+                            <button class="chip" :class="priceSymbol === 'BTC/USD' && 'active'" @click="changePriceSymbol('BTC/USD')">BTC</button>
+                            <button class="chip" :class="priceSymbol === 'ETH/USD' && 'active'" @click="changePriceSymbol('ETH/USD')">ETH</button>
+                        </div>
+                        <div class="chip-group">
+                            <button class="chip" :class="priceTimeframe === '5m' && 'active'" @click="changePriceTimeframe('5m')">5m</button>
+                            <button class="chip" :class="priceTimeframe === '15m' && 'active'" @click="changePriceTimeframe('15m')">15m</button>
+                            <button class="chip" :class="priceTimeframe === '1h' && 'active'" @click="changePriceTimeframe('1h')">1h</button>
+                            <button class="chip" :class="priceTimeframe === '4h' && 'active'" @click="changePriceTimeframe('4h')">4h</button>
+                            <button class="chip" :class="priceTimeframe === '1d' && 'active'" @click="changePriceTimeframe('1d')">1d</button>
+                        </div>
+                        <div class="chip-group" title="Escala del eje Y">
+                            <button class="chip" :class="priceScale === 'auto' && 'active'" @click="changePriceScale('auto')">Zoom</button>
+                            <button class="chip" :class="priceScale === 'zero' && 'active'" @click="changePriceScale('zero')">Desde 0</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-container"><canvas id="chartPrice"></canvas></div>
+                <div class="sub" style="margin-top:4px">🟢 = tu compra, 🔴 = tu venta</div>
+            </div>
+            <div class="card chart-card">
+                <div class="card-header"><h3>Estrategias Activas</h3></div>
+                <template x-if="Object.keys(dashboard.strategies || {}).length === 0">
+                    <p style="text-align:center;padding:40px;color:var(--text-dim)">
+                        Sin estrategias activas. Configura una en Estrategias.
+                    </p>
+                </template>
+                <div class="strategy-list">
+                    <template x-for="(info, name) in dashboard.strategies" :key="name">
+                        <div class="strategy-item">
+                            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                                <span class="status-dot status-running"></span>
+                                <strong x-text="name.toUpperCase()"></strong>
+                            </div>
+                            <div class="kv-grid">
+                                <template x-for="(val, key) in info" :key="key">
+                                    <div x-show="key !== 'name' && key !== 'running'" class="kv">
+                                        <span x-text="key"></span>
+                                        <strong x-text="typeof val === 'number' ? (val > 1 ? val.toFixed(2) : val.toFixed(6)) : val"></strong>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-header"><h2>Trades Recientes</h2>
+                <button class="btn btn-sm btn-outline" @click="setPage('trades')">Ver todos -></button>
+            </div>
+            <div class="card no-pad"><div class="table-wrap">
+                <table>
+                    <thead><tr><th>Hora</th><th>Estrategia</th><th>Par</th><th>Lado</th><th>Cantidad</th><th>Precio</th><th>Total</th></tr></thead>
+                    <tbody>
+                        <template x-for="t in dashboard.recent_trades" :key="t.id">
+                            <tr>
+                                <td x-text="timeAgo(t.created_at)"></td>
+                                <td><span class="tag" x-text="t.strategy"></span></td>
+                                <td x-text="t.symbol"></td>
+                                <td><span class="pill" :class="'pill-' + t.side" x-text="t.side.toUpperCase()"></span></td>
+                                <td x-text="t.amount.toFixed(8)"></td>
+                                <td x-text="money(t.price)"></td>
+                                <td x-text="money(t.cost)"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                <template x-if="!dashboard.recent_trades?.length">
+                    <p style="text-align:center;padding:30px;color:var(--text-dim)">Sin trades aun</p>
+                </template>
+            </div></div>
+        </div>
+    </div>
+
+    <!-- ============= STRATEGIES ============= -->
+    <div class="page" :class="page === 'strategies' && 'active'">
+        <div class="section">
+            <div class="section-header">
+                <h2>Estrategias de Trading</h2>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button class="btn btn-sm btn-outline" @click="runDiagnostic()" :disabled="diagnosticLoading">
+                        <span x-show="diagnosticLoading" class="spinner"></span>Diagnostico
+                    </button>
+                    <button class="btn btn-sm btn-outline" @click="showBacktest = !showBacktest">
+                        <span x-text="showBacktest ? 'Cerrar Backtest' : 'Backtest'"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Backtest panel -->
+            <template x-if="showBacktest">
+                <div class="card" style="margin-bottom:16px;border-color:var(--accent)">
+                    <h3 style="color:var(--accent);margin-bottom:12px">🔬 Backtest de Estrategia</h3>
+                    <div class="alert alert-info">
+                        Prueba una estrategia con datos historicos <strong>sin arriesgar dinero real</strong>.
+                        Los resultados incluyen P&L, comparacion vs HODL, drawdown maximo, win rate y fees estimados.
+                    </div>
+                    <div class="grid grid-3">
+                        <div class="form-group"><label>Estrategia</label>
+                            <select x-model="backtestForm.strategy">
+                                <option value="grid">Grid Trading</option>
+                                <option value="dca">DCA</option>
+                            </select>
+                        </div>
+                        <div class="form-group"><label>Simbolo</label>
+                            <select x-model="backtestForm.symbol">
+                                <template x-for="sym in supportedSymbols" :key="sym">
+                                    <option :value="sym" x-text="sym"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div class="form-group"><label>Timeframe</label>
+                            <select x-model="backtestForm.timeframe">
+                                <option value="5m">5 min</option>
+                                <option value="15m">15 min</option>
+                                <option value="1h">1 hora</option>
+                                <option value="4h">4 horas</option>
+                                <option value="1d">1 dia</option>
+                            </select>
+                        </div>
+                        <div class="form-group"><label>Velas a analizar</label>
+                            <input type="number" x-model.number="backtestForm.candles" min="50" max="1000">
+                        </div>
+                        <div class="form-group"><label>Capital inicial (quote)</label>
+                            <input type="number" x-model.number="backtestForm.initial_quote" min="10">
+                        </div>
+                    </div>
+
+                    <template x-if="backtestForm.strategy === 'grid'">
+                        <div class="grid grid-3">
+                            <div class="form-group"><label>Precio inferior</label>
+                                <input type="number" x-model.number="backtestForm.params.lower_price"></div>
+                            <div class="form-group"><label>Precio superior</label>
+                                <input type="number" x-model.number="backtestForm.params.upper_price"></div>
+                            <div class="form-group"><label>Num grids</label>
+                                <input type="number" x-model.number="backtestForm.params.num_grids"></div>
+                            <div class="form-group"><label>Cantidad por grid</label>
+                                <input type="number" step="0.0001" x-model.number="backtestForm.params.amount_per_grid"></div>
+                        </div>
+                    </template>
+                    <template x-if="backtestForm.strategy === 'dca'">
+                        <div class="grid grid-2">
+                            <div class="form-group"><label>Monto por compra</label>
+                                <input type="number" x-model.number="backtestForm.params.amount_usd"></div>
+                            <div class="form-group"><label>Intervalo (horas)</label>
+                                <input type="number" x-model.number="backtestForm.params.interval_hours"></div>
+                        </div>
+                    </template>
+
+                    <button class="btn btn-primary" @click="runBacktest()" :disabled="backtestLoading">
+                        <span x-show="backtestLoading" class="spinner"></span>Ejecutar backtest
+                    </button>
+
+                    <template x-if="backtestResult">
+                        <div style="margin-top:20px">
+                            <template x-if="!backtestResult.ok">
+                                <div class="alert alert-error" x-text="'Error: ' + backtestResult.error"></div>
+                            </template>
+                            <template x-if="backtestResult.ok">
+                                <div>
+                                    <div class="grid grid-4">
+                                        <div class="card kpi"><h3>Retorno Total</h3>
+                                            <div class="value" :style="{color: backtestResult.metrics.total_return_pct >= 0 ? 'var(--green)' : 'var(--red)'}"
+                                                 x-text="(backtestResult.metrics.total_return_pct >= 0 ? '+' : '') + backtestResult.metrics.total_return_pct + '%'"></div>
+                                            <div class="sub" x-text="(backtestResult.metrics.total_return_usd >= 0 ? '+' : '') + '$' + backtestResult.metrics.total_return_usd"></div>
+                                        </div>
+                                        <div class="card kpi"><h3>vs HODL</h3>
+                                            <div class="value" :style="{color: backtestResult.metrics.vs_hodl_pct >= 0 ? 'var(--green)' : 'var(--red)'}"
+                                                 x-text="(backtestResult.metrics.vs_hodl_pct >= 0 ? '+' : '') + backtestResult.metrics.vs_hodl_pct + '%'"></div>
+                                            <div class="sub" x-text="'HODL: ' + backtestResult.metrics.hodl_return_pct + '%'"></div>
+                                        </div>
+                                        <div class="card kpi"><h3>Trades</h3>
+                                            <div class="value" x-text="backtestResult.metrics.num_trades"></div>
+                                            <div class="sub" x-text="backtestResult.metrics.num_buys + ' buys / ' + backtestResult.metrics.num_sells + ' sells'"></div>
+                                        </div>
+                                        <div class="card kpi"><h3>Max Drawdown</h3>
+                                            <div class="value" style="color:var(--red)" x-text="'-' + backtestResult.metrics.max_drawdown_pct + '%'"></div>
+                                            <div class="sub" x-text="'Fees: $' + backtestResult.metrics.total_fees"></div>
+                                        </div>
+                                    </div>
+                                    <div class="alert alert-info" style="margin-top:12px">
+                                        <strong>Resumen:</strong> Con <code x-text="backtestForm.candles + ' velas de ' + backtestForm.timeframe"></code>,
+                                        la estrategia <span :style="{color: backtestResult.metrics.vs_hodl_pct >= 0 ? 'var(--green)' : 'var(--red)'}"
+                                            x-text="backtestResult.metrics.vs_hodl_pct >= 0 ? 'super-o a HODL' : 'perdio vs HODL'"></span>
+                                        por <strong x-text="Math.abs(backtestResult.metrics.vs_hodl_pct) + '%'"></strong>.
+                                        Win rate: <strong x-text="backtestResult.metrics.win_rate_pct + '%'"></strong>
+                                        (<span x-text="backtestResult.metrics.wins"></span>W / <span x-text="backtestResult.metrics.losses"></span>L).
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+            </template>
+
+            <template x-if="diagnostic">
+                <div class="card" style="margin-bottom:16px;border-color:var(--accent)">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                        <h3 style="margin:0">Diagnostico de tu cuenta Coinbase</h3>
+                        <button class="btn btn-sm btn-outline" @click="diagnostic = null">Ocultar</button>
+                    </div>
+
+                    <div class="sub" style="margin-bottom:8px">Checks:</div>
+                    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
+                        <template x-for="c in diagnostic.checks" :key="c.name">
+                            <div :class="c.ok ? 'alert alert-success' : 'alert alert-error'" style="margin:0;padding:10px 14px">
+                                <strong x-text="(c.ok ? '✅ ' : '❌ ') + c.name + ': '"></strong>
+                                <span x-text="c.detail"></span>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div class="sub" style="margin-bottom:8px">Pares disponibles:</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+                        <template x-for="p in diagnostic.pairs" :key="p.symbol">
+                            <div :style="{background: p.ok ? 'var(--green-dim)' : 'var(--red-dim)', color: p.ok ? 'var(--green)' : 'var(--red)', padding: '6px 12px', borderRadius: '8px', fontSize: '12px'}">
+                                <strong x-text="p.symbol"></strong>
+                                <span x-show="p.ok" x-text="' @ $' + p.price"></span>
+                                <span x-show="!p.ok"> ❌</span>
+                            </div>
+                        </template>
+                    </div>
+
+                    <template x-if="diagnostic.recommendations?.length">
+                        <div>
+                            <div class="sub" style="margin-bottom:8px">Recomendaciones:</div>
+                            <div style="display:flex;flex-direction:column;gap:6px">
+                                <template x-for="r in diagnostic.recommendations" :key="r">
+                                    <div class="alert alert-info" style="margin:0;padding:10px 14px" x-text="r"></div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </template>
+
+            <template x-for="s in strategies" :key="s.name">
+                <div class="card" style="margin-bottom:16px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                        <h3 style="display:flex;align-items:center;gap:8px;margin:0">
+                            <span class="status-dot" :class="s.running ? 'status-running' : 'status-stopped'"></span>
+                            <span x-text="s.name.toUpperCase()"></span>
+                        </h3>
+                        <div style="display:flex;gap:8px">
+                            <button class="btn btn-sm btn-success" x-show="!s.running" @click="startStrategy(s.name)">Iniciar</button>
+                            <button class="btn btn-sm btn-primary" x-show="s.running && (s.name === 'dca' || s.name === 'grid')" @click="tickStrategy(s.name)" :title="s.name === 'dca' ? 'Comprar ahora (saltando el intervalo)' : 'Forzar evaluacion del grid ahora'">
+                                <span x-text="s.name === 'dca' ? 'Comprar ahora' : 'Tick ahora'"></span>
+                            </button>
+                            <button class="btn btn-sm btn-danger" x-show="s.running" @click="stopStrategy(s.name)">Detener</button>
+                        </div>
+                    </div>
+                    <template x-if="s.name === 'grid'">
+                        <div class="grid grid-2">
+                            <div class="form-group"><label>Simbolo</label>
+                                <select x-model="s.symbol" @change="saveStrategy(s)">
+                                    <template x-for="sym in supportedSymbols" :key="sym">
+                                        <option :value="sym" x-text="sym"></option>
+                                    </template>
+                                </select></div>
+                            <div class="form-group"><label>Precio Inferior</label>
+                                <input type="number" x-model.number="s.params.lower_price" @change="saveStrategy(s)"></div>
+                            <div class="form-group"><label>Precio Superior</label>
+                                <input type="number" x-model.number="s.params.upper_price" @change="saveStrategy(s)"></div>
+                            <div class="form-group"><label>Numero de Grids</label>
+                                <input type="number" x-model.number="s.params.num_grids" @change="saveStrategy(s)"></div>
+                            <div class="form-group"><label>Cantidad por Grid (crypto)</label>
+                                <input type="number" step="0.0001" x-model.number="s.params.amount_per_grid" @change="saveStrategy(s)"></div>
+                        </div>
+                    </template>
+                    <template x-if="s.name === 'dca'">
+                        <div class="grid grid-2">
+                            <div class="form-group"><label>Simbolo</label>
+                                <select x-model="s.symbol" @change="saveStrategy(s)">
+                                    <template x-for="sym in supportedSymbols" :key="sym">
+                                        <option :value="sym" x-text="sym"></option>
+                                    </template>
+                                </select></div>
+                            <div class="form-group"><label>Monto USD por compra</label>
+                                <input type="number" x-model.number="s.params.amount_usd" @change="saveStrategy(s)"></div>
+                            <div class="form-group"><label>Intervalo (horas)</label>
+                                <input type="number" x-model.number="s.params.interval_hours" @change="saveStrategy(s)"></div>
+                        </div>
+                    </template>
+                    <template x-if="s.name === 'webhook'">
+                        <div class="grid grid-2">
+                            <div class="form-group"><label>Simbolo por defecto</label>
+                                <select x-model="s.symbol" @change="saveStrategy(s)">
+                                    <template x-for="sym in supportedSymbols" :key="sym">
+                                        <option :value="sym" x-text="sym"></option>
+                                    </template>
+                                </select></div>
+                            <div class="form-group"><label>Passphrase</label>
+                                <input type="text" x-model="s.params.passphrase" @change="saveStrategy(s)"></div>
+                            <div class="form-group"><label>Monto USD por defecto</label>
+                                <input type="number" x-model.number="s.params.default_amount_usd" @change="saveStrategy(s)"></div>
+                            <div class="form-group" style="grid-column:1/-1"><label>URL del Webhook</label>
+                                <input type="text" readonly :value="window.location.origin + '/api/webhook/tradingview'" @click="$el.select()"></div>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- ============= TRADES ============= -->
+    <div class="page" :class="page === 'trades' && 'active'">
+        <div class="section">
+            <div class="section-header">
+                <h2>Operaciones</h2>
+                <button class="btn btn-sm btn-outline" @click="exportCsv()">Exportar CSV</button>
+            </div>
+            <div class="grid grid-4">
+                <div class="card kpi"><h3>Operaciones</h3>
+                    <div class="value" x-text="tradeStats.totals?.total_trades || 0"></div>
+                    <div class="sub" x-text="'Ultimos ' + (tradeFilters.since_hours / 24).toFixed(0) + ' dias'"></div></div>
+                <div class="card kpi"><h3>Volumen</h3>
+                    <div class="value" x-text="money(tradeStats.totals?.total_volume || 0)"></div>
+                    <div class="sub">Total movido</div></div>
+                <div class="card kpi"><h3>Fees Pagados</h3>
+                    <div class="value" x-text="money(tradeStats.totals?.total_fees || 0)"></div>
+                    <div class="sub" x-text="((tradeStats.totals?.total_fees || 0) / Math.max(tradeStats.totals?.total_volume || 1, 1) * 100).toFixed(2) + '%'"></div></div>
+                <div class="card kpi"><h3>Buy / Sell</h3>
+                    <div class="value">
+                        <span style="color:var(--green)" x-text="tradeStats.by_side?.find(s=>s.side==='buy')?.trades || 0"></span> /
+                        <span style="color:var(--red)" x-text="tradeStats.by_side?.find(s=>s.side==='sell')?.trades || 0"></span>
+                    </div>
+                    <div class="sub">Compras / Ventas</div></div>
+            </div>
+            <div class="grid grid-2">
+                <div class="card chart-card">
+                    <div class="card-header"><h3>Volumen por Estrategia</h3></div>
+                    <div class="chart-container small"><canvas id="chartByStrategy"></canvas></div>
+                </div>
+                <div class="card chart-card">
+                    <div class="card-header"><h3>Actividad Diaria</h3></div>
+                    <div class="chart-container small"><canvas id="chartByDay"></canvas></div>
+                </div>
+            </div>
+            <div class="card filters">
+                <div class="filter-row">
+                    <div class="filter-item"><label>Periodo</label>
+                        <select x-model.number="tradeFilters.since_hours" @change="loadTradesAndStats()">
+                            <option :value="24">24 horas</option><option :value="168">7 dias</option>
+                            <option :value="720">30 dias</option><option :value="8760">1 ano</option>
+                        </select></div>
+                    <div class="filter-item"><label>Estrategia</label>
+                        <select x-model="tradeFilters.strategy" @change="loadTrades()">
+                            <option value="">Todas</option><option value="grid">Grid</option>
+                            <option value="dca">DCA</option><option value="webhook">Webhook</option></select></div>
+                    <div class="filter-item"><label>Par</label>
+                        <select x-model="tradeFilters.symbol" @change="loadTrades()">
+                            <option value="">Todos</option><option value="BTC/USD">BTC/USD</option><option value="ETH/USD">ETH/USD</option></select></div>
+                    <div class="filter-item"><label>Lado</label>
+                        <select x-model="tradeFilters.side" @change="loadTrades()">
+                            <option value="">Todos</option><option value="buy">Buy</option><option value="sell">Sell</option></select></div>
+                    <div class="filter-item"><label>&nbsp;</label>
+                        <button class="btn btn-sm btn-outline" @click="clearFilters()">Limpiar</button></div>
+                </div>
+            </div>
+            <div class="card no-pad" style="margin-top:16px">
+                <div class="table-wrap">
+                <table>
+                    <thead><tr>
+                        <th>Fecha</th><th>Estrategia</th><th>Par</th><th>Lado</th><th>Tipo</th>
+                        <th>Cantidad</th><th>Precio</th><th>Total</th><th>Fee</th><th>Estado</th>
+                    </tr></thead>
+                    <tbody>
+                        <template x-for="t in tradesData.trades" :key="t.id">
+                            <tr @click="showTradeDetail(t)" style="cursor:pointer">
+                                <td x-text="new Date(t.created_at).toLocaleString()"></td>
+                                <td><span class="tag" x-text="t.strategy"></span></td>
+                                <td x-text="t.symbol"></td>
+                                <td><span class="pill" :class="'pill-' + t.side" x-text="t.side.toUpperCase()"></span></td>
+                                <td x-text="t.order_type"></td>
+                                <td x-text="t.amount.toFixed(8)"></td>
+                                <td x-text="money(t.price)"></td>
+                                <td x-text="money(t.cost)"></td>
+                                <td x-text="money(t.fee, 4)"></td>
+                                <td><span class="pill pill-status" x-text="t.status"></span></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                <template x-if="!tradesData.trades?.length">
+                    <p style="text-align:center;padding:30px;color:var(--text-dim)">Sin trades</p>
+                </template>
+                </div>
+                <div x-show="tradesData.pages > 1" style="display:flex;justify-content:center;gap:8px;padding:12px">
+                    <button class="btn btn-sm btn-outline" :disabled="tradeFilters.page <= 1" @click="tradeFilters.page--; loadTrades()">Anterior</button>
+                    <span class="sub" style="padding:6px" x-text="'Pagina ' + tradeFilters.page + ' de ' + tradesData.pages"></span>
+                    <button class="btn btn-sm btn-outline" :disabled="tradeFilters.page >= tradesData.pages" @click="tradeFilters.page++; loadTrades()">Siguiente</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============= ACCOUNT ============= -->
+    <div class="page" :class="page === 'account' && 'active'">
+        <div class="section">
+            <div class="section-header">
+                <h2>Cuenta Coinbase</h2>
+                <div style="display:flex;gap:8px">
+                    <button class="btn btn-sm btn-outline" @click="loadAccount()" :disabled="accountLoading">
+                        <span x-show="accountLoading" class="spinner"></span>Refrescar
+                    </button>
+                    <button class="btn btn-sm btn-primary" @click="syncTrades()" :disabled="syncLoading">
+                        <span x-show="syncLoading" class="spinner"></span>Sincronizar trades (30d)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Totals card -->
+            <div class="grid grid-3">
+                <div class="card kpi">
+                    <h3>Valor total estimado</h3>
+                    <div class="value" x-text="money(accountData.total_usd || 0)"></div>
+                    <div class="sub" x-text="(accountData.accounts?.length || 0) + ' cuentas con saldo'"></div>
+                </div>
+                <div class="card kpi">
+                    <h3>Ordenes Abiertas</h3>
+                    <div class="value" x-text="openOrders.length"></div>
+                    <div class="sub">En Coinbase ahora mismo</div>
+                </div>
+                <div class="card kpi">
+                    <h3>Ultimo Sync</h3>
+                    <div class="value" style="font-size:18px" x-text="lastSync ? new Date(lastSync).toLocaleString() : 'Nunca'"></div>
+                    <div class="sub" x-text="syncReport ? (syncReport.imported + ' importados, ' + syncReport.duplicates_skipped + ' ya existian') : '-'"></div>
+                </div>
+            </div>
+
+            <!-- Balances detallados -->
+            <div class="section">
+                <div class="section-header"><h2 style="font-size:16px">Balances por Activo</h2></div>
+                <div class="card no-pad">
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr>
+                                <th>Activo</th><th>Disponible</th><th>En Orden</th><th>Total</th><th>Valor (USD)</th>
+                            </tr></thead>
+                            <tbody>
+                                <template x-for="a in accountData.accounts" :key="a.currency">
+                                    <tr>
+                                        <td><strong x-text="a.currency"></strong></td>
+                                        <td x-text="a.free?.toFixed(8)"></td>
+                                        <td x-text="a.used?.toFixed(8)"></td>
+                                        <td x-text="a.total?.toFixed(8)"></td>
+                                        <td x-text="a.usd_value !== null ? money(a.usd_value) : '-'"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                        <template x-if="!accountData.accounts?.length">
+                            <p style="text-align:center;padding:30px;color:var(--text-dim)">Click "Refrescar" para cargar.</p>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Open orders -->
+            <div class="section">
+                <div class="section-header"><h2 style="font-size:16px">Ordenes Abiertas en Coinbase</h2></div>
+                <div class="card no-pad">
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr>
+                                <th>Fecha</th><th>Par</th><th>Lado</th><th>Tipo</th>
+                                <th>Precio</th><th>Cantidad</th><th>Llenado</th><th>Estado</th>
+                            </tr></thead>
+                            <tbody>
+                                <template x-for="o in openOrders" :key="o.id">
+                                    <tr>
+                                        <td x-text="o.datetime ? new Date(o.datetime).toLocaleString() : '-'"></td>
+                                        <td x-text="o.symbol"></td>
+                                        <td><span class="pill" :class="'pill-' + o.side" x-text="o.side?.toUpperCase()"></span></td>
+                                        <td x-text="o.type"></td>
+                                        <td x-text="o.price ? money(o.price) : '-'"></td>
+                                        <td x-text="o.amount?.toFixed(8)"></td>
+                                        <td x-text="o.filled?.toFixed(8)"></td>
+                                        <td><span class="pill pill-status" x-text="o.status"></span></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                        <template x-if="!openOrders.length">
+                            <p style="text-align:center;padding:30px;color:var(--text-dim)">Sin ordenes abiertas en Coinbase</p>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sync report -->
+            <template x-if="syncReport">
+                <div class="card" style="border-color:var(--accent)">
+                    <h3>Resultado de sincronizacion</h3>
+                    <div class="grid grid-3" style="margin-top:12px">
+                        <div><div class="sub">Importados</div><div style="font-size:24px;font-weight:700;color:var(--green)" x-text="syncReport.imported"></div></div>
+                        <div><div class="sub">Duplicados</div><div style="font-size:24px;font-weight:700;color:var(--text-dim)" x-text="syncReport.duplicates_skipped"></div></div>
+                        <div><div class="sub">Errores</div><div style="font-size:24px;font-weight:700;color:var(--red)" x-text="syncReport.errors"></div></div>
+                    </div>
+                    <template x-if="syncReport.per_symbol">
+                        <div style="margin-top:16px">
+                            <div class="sub" style="margin-bottom:8px">Por par:</div>
+                            <div style="display:flex;flex-wrap:wrap;gap:8px">
+                                <template x-for="(v, k) in syncReport.per_symbol" :key="k">
+                                    <div style="background:var(--bg-input);padding:8px 12px;border-radius:8px;font-size:12px">
+                                        <strong x-text="k"></strong>:
+                                        <span x-text="v.fetched + ' encontrados, ' + v.imported + ' nuevos'"></span>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- ============= RISK ============= -->
+    <div class="page" :class="page === 'risk' && 'active'">
+        <div class="section">
+            <div class="section-header"><h2>Gestion de Riesgo</h2></div>
+
+            <div class="card" style="margin-bottom:16px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                    <h3 style="margin:0">Reglas de riesgo</h3>
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none">
+                        <input type="checkbox" x-model="riskConfig.enabled" @change="saveRisk()" style="width:auto"> Activar
+                    </label>
+                </div>
+                <div class="alert alert-info">
+                    Las reglas se aplican antes de cada orden. Si se infringe alguna, el trade es bloqueado automaticamente.
+                </div>
+                <div class="grid grid-2">
+                    <div class="form-group">
+                        <label>Limite de perdida diaria (USD)</label>
+                        <input type="number" x-model.number="riskConfig.max_daily_loss_usd" @change="saveRisk()" placeholder="0 = sin limite">
+                        <div class="sub">Si pierdes mas de esto hoy, se bloquean nuevos trades</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Drawdown maximo (%)</label>
+                        <input type="number" step="0.1" x-model.number="riskConfig.max_drawdown_pct" @change="saveRisk()" placeholder="0 = sin limite">
+                        <div class="sub">Bloqueo si portfolio cae X% del pico de 30 dias</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Max exposicion BTC (%)</label>
+                        <input type="number" step="1" min="0" max="100" x-model.number="riskConfig.max_btc_allocation_pct" @change="saveRisk()">
+                        <div class="sub">No comprar mas BTC si supera este % del portfolio</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Max exposicion ETH (%)</label>
+                        <input type="number" step="1" min="0" max="100" x-model.number="riskConfig.max_eth_allocation_pct" @change="saveRisk()">
+                        <div class="sub">No comprar mas ETH si supera este % del portfolio</div>
+                    </div>
+                    <div class="form-group" style="grid-column:1/-1">
+                        <label>Circuit breaker: caida en 1h (%)</label>
+                        <input type="number" step="0.1" x-model.number="riskConfig.circuit_breaker_pct" @change="saveRisk()" placeholder="0 = desactivado">
+                        <div class="sub">Si el precio cae mas de X% en 1 hora, pausa trading 1 hora</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="border-color:var(--red)">
+                <h3 style="color:var(--red)">⚠ Kill Switch</h3>
+                <p class="sub" style="margin:8px 0 16px 0">
+                    Detiene TODAS las estrategias activas inmediatamente y cancela TODAS las ordenes abiertas en Coinbase.
+                    Usa esto si algo va mal.
+                </p>
+                <button class="btn btn-danger" @click="triggerKillSwitch()">PARAR TODO</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============= SETTINGS ============= -->
+    <div class="page" :class="page === 'settings' && 'active'">
+        <div class="section">
+            <div class="section-header"><h2>Configuracion</h2></div>
+
+            <div class="card" style="margin-bottom:16px">
+                <h3>Seguridad del Dashboard</h3>
+                <template x-if="authRequired">
+                    <div>
+                        <div class="alert alert-success">Autenticacion activa</div>
+                        <div class="form-group" style="margin-top:12px">
+                            <label>Cambiar password</label>
+                            <input type="password" x-model="newPassword" placeholder="Nuevo password">
+                        </div>
+                        <div style="display:flex;gap:8px">
+                            <button class="btn btn-sm btn-primary" @click="changePassword()" :disabled="!newPassword">Cambiar</button>
+                            <button class="btn btn-sm btn-danger" @click="disableAuth()">Desactivar auth</button>
+                        </div>
+                    </div>
+                </template>
+                <template x-if="!authRequired">
+                    <div>
+                        <div class="alert alert-info">Sin password - cualquiera en tu red puede acceder</div>
+                        <div class="form-group" style="margin-top:12px">
+                            <label>Crear password</label>
+                            <input type="password" x-model="newPassword" placeholder="Minimo 4 caracteres">
+                        </div>
+                        <button class="btn btn-sm btn-primary" @click="changePassword()" :disabled="!newPassword">Proteger dashboard</button>
+                    </div>
+                </template>
+            </div>
+
+            <div class="card" style="margin-bottom:16px">
+                <h3>Conexion a Coinbase</h3>
+                <template x-if="exchangeStatus.configured">
+                    <div>
+                        <div class="alert alert-success">Conectado a Coinbase</div>
+                        <button class="btn btn-sm btn-danger" @click="deleteExchangeKeys()">Desconectar</button>
+                    </div>
+                </template>
+                <template x-if="!exchangeStatus.configured">
+                    <div>
+                        <div class="wizard-step">
+                            <h3>Paso 1: Crea tus API Keys</h3>
+                            <ol>
+                                <li><a href="https://portal.cdp.coinbase.com/access/api" target="_blank" style="color:var(--accent)">Coinbase CDP Portal</a></li>
+                                <li>Click en "Create API Key", permiso "Trade"</li>
+                                <li>Coinbase te da un JSON con <strong>name (UUID)</strong> y <strong>privateKey (PEM)</strong></li>
+                            </ol>
+                        </div>
+                        <div class="wizard-step">
+                            <h3>Paso 2: Pega tus credenciales</h3>
+                            <div class="form-group"><label>API Key (UUID)</label>
+                                <input type="text" x-model="wizardKeys.api_key"></div>
+                            <div class="form-group"><label>API Secret (EC Private Key PEM)</label>
+                                <textarea x-model="wizardKeys.api_secret" rows="8" style="font-family:monospace;font-size:12px"></textarea></div>
+                            <div style="display:flex;gap:8px">
+                                <button class="btn btn-primary" @click="validateKeys()" :disabled="wizardLoading">
+                                    <span x-show="wizardLoading" class="spinner"></span>Validar
+                                </button>
+                                <button class="btn btn-success" x-show="wizardValid" @click="saveKeys()">Guardar</button>
+                            </div>
+                            <div x-show="wizardResult" class="alert" :class="wizardValid ? 'alert-success' : 'alert-error'" x-text="wizardResult"></div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <div class="card" style="margin-bottom:16px">
+                <h3>Modo de Trading</h3>
+                <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
+                    <button class="btn btn-sm" :class="dashboard.paper_mode ? 'btn-primary' : 'btn-outline'" @click="toggleMode()">
+                        <span x-text="dashboard.paper_mode ? 'PAPER (simulado)' : 'LIVE (dinero real)'"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ============= TELEGRAM ============= -->
+            <div class="card" style="margin-bottom:16px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                    <h3 style="margin:0">Telegram</h3>
+                    <template x-if="tgConfig.configured">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none">
+                            <input type="checkbox" :checked="tgConfig.enabled" @change="toggleTelegram()" style="width:auto"> Activo
+                        </label>
+                    </template>
+                </div>
+
+                <template x-if="tgConfig.configured">
+                    <div>
+                        <div class="alert alert-success" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                            <div>
+                                Conectado como <strong x-text="'@' + tgConfig.bot_username"></strong>
+                                - Chat ID: <code x-text="tgConfig.chat_id"></code>
+                                - Token: <code x-text="tgConfig.token_hint"></code>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+                            <button class="btn btn-sm btn-outline" @click="testTelegramSaved()">Enviar prueba</button>
+                            <button class="btn btn-sm btn-outline" @click="sendDailySummary()">Enviar resumen diario ahora</button>
+                            <button class="btn btn-sm btn-outline" @click="showTgCommands = !showTgCommands">
+                                <span x-text="showTgCommands ? 'Ocultar' : 'Ver'"></span> comandos
+                            </button>
+                            <button class="btn btn-sm btn-danger" @click="deleteTelegram()">Eliminar</button>
+                        </div>
+
+                        <div x-show="showTgCommands" style="margin-top:16px;background:var(--bg-input);border-radius:8px;padding:16px">
+                            <div class="sub" style="margin-bottom:12px">Envia estos comandos a tu bot desde Telegram:</div>
+                            <div style="display:flex;flex-direction:column;gap:8px">
+                                <template x-for="c in tgCommands" :key="c.cmd">
+                                    <div style="display:flex;gap:12px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border)">
+                                        <code style="color:var(--accent);font-size:12px;white-space:nowrap" x-text="c.cmd"></code>
+                                        <span class="sub" style="font-size:12px" x-text="c.desc"></span>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+
+                <template x-if="!tgConfig.configured">
+                    <div>
+                        <div class="wizard-step">
+                            <h3>Paso 1: Crea un bot en Telegram</h3>
+                            <ol>
+                                <li>Abre Telegram y busca <a href="https://t.me/BotFather" target="_blank" style="color:var(--accent)">@BotFather</a></li>
+                                <li>Envia <code>/newbot</code> y sigue las instrucciones</li>
+                                <li>BotFather te dara un <strong>token</strong> como <code>123456:ABC-DEF...</code></li>
+                            </ol>
+                        </div>
+
+                        <div class="wizard-step">
+                            <h3>Paso 2: Pega el token del bot</h3>
+                            <div class="form-group">
+                                <label>Bot Token</label>
+                                <input type="text" x-model="tgWizard.bot_token" placeholder="123456:ABC-DEF..." @input="tgWizard.validated = false">
+                            </div>
+                            <button class="btn btn-sm btn-primary" @click="validateTelegramToken()" :disabled="tgWizard.loading || !tgWizard.bot_token">
+                                <span x-show="tgWizard.loading" class="spinner"></span>Validar token
+                            </button>
+                            <div x-show="tgWizard.validated" class="alert alert-success" style="margin-top:12px">
+                                ✓ Bot valido: <strong x-text="'@' + tgWizard.bot_username"></strong>
+                            </div>
+                            <div x-show="tgWizard.error" class="alert alert-error" style="margin-top:12px" x-text="tgWizard.error"></div>
+                        </div>
+
+                        <template x-if="tgWizard.validated">
+                            <div class="wizard-step">
+                                <h3>Paso 3: Obten tu Chat ID</h3>
+                                <div class="alert alert-info">
+                                    Abre Telegram, busca <strong x-text="'@' + tgWizard.bot_username"></strong> y envia <code>/start</code>.
+                                    Luego click en "Detectar" para que el bot encuentre tu chat automaticamente.
+                                </div>
+                                <div style="display:flex;gap:8px;align-items:flex-end">
+                                    <div class="form-group" style="flex:1;margin:0">
+                                        <label>Chat ID</label>
+                                        <input type="text" x-model="tgWizard.chat_id" placeholder="Tu chat ID (ej: 123456789)">
+                                    </div>
+                                    <button class="btn btn-outline" @click="detectChatId()" :disabled="tgWizard.loading">
+                                        <span x-show="tgWizard.loading" class="spinner"></span>Detectar
+                                    </button>
+                                </div>
+                                <template x-if="tgWizard.chats?.length > 1">
+                                    <div style="margin-top:12px">
+                                        <label>Multiples chats detectados - selecciona:</label>
+                                        <div style="display:flex;flex-direction:column;gap:6px">
+                                            <template x-for="c in tgWizard.chats" :key="c.id">
+                                                <label style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-input);border-radius:8px;cursor:pointer;text-transform:none">
+                                                    <input type="radio" :value="c.id" x-model="tgWizard.chat_id" style="width:auto">
+                                                    <span><strong x-text="c.title || c.type"></strong> <span class="sub" x-text="'(' + c.type + ', ID ' + c.id + ')'"></span></span>
+                                                </label>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
+                                <div x-show="tgWizard.detectError" class="alert alert-error" style="margin-top:12px" x-text="tgWizard.detectError"></div>
+                            </div>
+                        </template>
+
+                        <template x-if="tgWizard.validated && tgWizard.chat_id">
+                            <div class="wizard-step">
+                                <h3>Paso 4: Prueba y guarda</h3>
+                                <div style="display:flex;gap:8px">
+                                    <button class="btn btn-outline" @click="testTelegram()" :disabled="tgWizard.loading">Enviar mensaje de prueba</button>
+                                    <button class="btn btn-success" @click="saveTelegram()" :disabled="tgWizard.loading">Guardar y activar</button>
+                                </div>
+                                <div x-show="tgWizard.testResult" class="alert" :class="tgWizard.testOk ? 'alert-success' : 'alert-error'" style="margin-top:12px" x-text="tgWizard.testResult"></div>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+            </div>
+
+            <!-- ============= EMAIL ============= -->
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                    <h3 style="margin:0">Email</h3>
+                    <template x-if="emailConfig.configured">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none">
+                            <input type="checkbox" :checked="emailConfig.enabled" @change="toggleEmail()" style="width:auto"> Activo
+                        </label>
+                    </template>
+                </div>
+
+                <template x-if="emailConfig.configured">
+                    <div>
+                        <div class="alert alert-success">
+                            SMTP: <code x-text="emailConfig.smtp_host + ':' + emailConfig.smtp_port"></code>
+                            - Destinatario: <code x-text="emailConfig.email_to"></code>
+                        </div>
+                        <div style="display:flex;gap:8px;margin-top:12px">
+                            <button class="btn btn-sm btn-outline" @click="showEmailWizard = true">Editar</button>
+                            <button class="btn btn-sm btn-danger" @click="deleteEmail()">Eliminar</button>
+                        </div>
+                    </div>
+                </template>
+
+                <template x-if="!emailConfig.configured || showEmailWizard">
+                    <div class="wizard-step">
+                        <h3>Configurar SMTP</h3>
+                        <div class="alert alert-info">
+                            Con Gmail usa un <a href="https://myaccount.google.com/apppasswords" target="_blank" style="color:var(--accent)">App Password</a> (no tu password normal).
+                            Host: <code>smtp.gmail.com</code>, Puerto: <code>587</code>
+                        </div>
+                        <div class="grid grid-2">
+                            <div class="form-group"><label>SMTP Host</label>
+                                <input type="text" x-model="emailWizard.smtp_host" placeholder="smtp.gmail.com"></div>
+                            <div class="form-group"><label>Puerto</label>
+                                <input type="number" x-model.number="emailWizard.smtp_port" placeholder="587"></div>
+                            <div class="form-group"><label>Usuario SMTP</label>
+                                <input type="text" x-model="emailWizard.smtp_user" placeholder="tu@gmail.com"></div>
+                            <div class="form-group"><label>Password SMTP</label>
+                                <input type="password" x-model="emailWizard.smtp_pass" placeholder="App password"></div>
+                            <div class="form-group" style="grid-column:1/-1"><label>Destinatario</label>
+                                <input type="email" x-model="emailWizard.email_to" placeholder="donde recibir alertas"></div>
+                        </div>
+                        <div style="display:flex;gap:8px">
+                            <button class="btn btn-outline" @click="testEmail()" :disabled="emailWizard.loading">Probar</button>
+                            <button class="btn btn-success" @click="saveEmail()" :disabled="emailWizard.loading">Guardar y activar</button>
+                            <button class="btn btn-outline" @click="showEmailWizard = false" x-show="emailConfig.configured">Cancelar</button>
+                        </div>
+                        <div x-show="emailWizard.result" class="alert" :class="emailWizard.ok ? 'alert-success' : 'alert-error'" style="margin-top:12px" x-text="emailWizard.result"></div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- Tick result modal -->
+<div class="modal-overlay" x-show="tickResult" @click="tickResult = null" x-cloak>
+    <div class="modal" @click.stop x-show="tickResult" style="max-width:600px">
+        <div class="modal-header">
+            <h3 x-text="tickResult?.ok === false && !tickResult?.results?.length ? '❌ Error' : (tickResult?.filled > 0 && tickResult?.failed === 0 ? '✅ Ejecucion exitosa' : (tickResult?.filled > 0 ? '⚠️ Ejecucion parcial' : (tickResult?.failed > 0 ? '❌ Ejecucion fallida' : 'ℹ️ Resultado')))"></h3>
+            <button class="btn btn-sm btn-outline" @click="tickResult = null">Cerrar</button>
+        </div>
+        <template x-if="tickResult">
+            <div class="modal-body">
+                <template x-if="tickResult.error && !tickResult.results?.length">
+                    <div class="alert alert-error" x-text="tickResult.error"></div>
+                </template>
+
+                <template x-if="tickResult.message">
+                    <div :class="tickResult.ok ? 'alert alert-success' : (tickResult.failed > 0 && tickResult.filled === 0 ? 'alert alert-error' : 'alert alert-info')" x-text="tickResult.message"></div>
+                </template>
+
+                <template x-if="tickResult.results?.length">
+                    <div style="margin-top:16px">
+                        <div class="sub" style="margin-bottom:8px">Detalle por orden:</div>
+                        <div style="display:flex;flex-direction:column;gap:10px">
+                            <template x-for="(r, i) in tickResult.results" :key="i">
+                                <div :class="r.ok ? 'alert alert-success' : 'alert alert-error'" style="margin:0">
+                                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                                        <span x-text="r.ok ? '✅' : '❌'"></span>
+                                        <strong>
+                                            <span :class="'pill pill-' + r.side" x-text="r.side?.toUpperCase()"></span>
+                                            <span x-text="' ' + r.amount?.toFixed(8) + ' ' + r.symbol"></span>
+                                        </strong>
+                                    </div>
+                                    <template x-if="r.ok">
+                                        <div style="font-size:12px">
+                                            <div>Precio: <strong x-text="money(r.price)"></strong></div>
+                                            <div>Total: <strong x-text="money(r.cost)"></strong></div>
+                                            <div x-show="r.fee">Fee: <strong x-text="money(r.fee, 4)"></strong></div>
+                                            <div x-show="r.order_id" style="font-family:monospace;font-size:10px;opacity:0.7;margin-top:4px">Order ID: <span x-text="r.order_id"></span></div>
+                                        </div>
+                                    </template>
+                                    <template x-if="!r.ok">
+                                        <div style="font-size:12px">
+                                            <div><strong>Motivo:</strong> <span x-text="r.error"></span></div>
+                                            <div x-show="r.status === 'risk_blocked'" style="margin-top:6px;opacity:0.8">
+                                                💡 Tip: revisa la pestana <em>Riesgo</em> para ajustar los limites.
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </template>
+    </div>
+</div>
+
+<!-- Trade detail modal -->
+<div class="modal-overlay" x-show="tradeDetail" @click="tradeDetail = null" x-cloak>
+    <div class="modal" @click.stop x-show="tradeDetail">
+        <div class="modal-header">
+            <h3>Detalle del Trade</h3>
+            <button class="btn btn-sm btn-outline" @click="tradeDetail = null">Cerrar</button>
+        </div>
+        <template x-if="tradeDetail">
+            <div class="modal-body">
+                <div class="kv-list">
+                    <div><span>ID</span><strong x-text="'#' + tradeDetail.id"></strong></div>
+                    <div><span>Fecha</span><strong x-text="new Date(tradeDetail.created_at).toLocaleString()"></strong></div>
+                    <div><span>Estrategia</span><strong x-text="tradeDetail.strategy"></strong></div>
+                    <div><span>Par</span><strong x-text="tradeDetail.symbol"></strong></div>
+                    <div><span>Lado</span><strong :style="{color: tradeDetail.side === 'buy' ? 'var(--green)' : 'var(--red)'}" x-text="tradeDetail.side.toUpperCase()"></strong></div>
+                    <div><span>Tipo de orden</span><strong x-text="tradeDetail.order_type"></strong></div>
+                    <div><span>Cantidad</span><strong x-text="tradeDetail.amount.toFixed(8)"></strong></div>
+                    <div><span>Precio ejecutado</span><strong x-text="money(tradeDetail.price)"></strong></div>
+                    <div><span>Total</span><strong x-text="money(tradeDetail.cost)"></strong></div>
+                    <div><span>Fee</span><strong x-text="money(tradeDetail.fee, 4)"></strong></div>
+                    <div><span>Order ID</span><strong style="font-family:monospace;font-size:11px" x-text="tradeDetail.order_id || '-'"></strong></div>
+                    <div><span>Estado</span><strong x-text="tradeDetail.status"></strong></div>
+                    <div><span>Modo</span><strong x-text="tradeDetail.is_paper ? 'PAPER' : 'LIVE'"></strong></div>
+                </div>
+            </div>
+        </template>
+    </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+# Caddy config for CryptoBot
+# HTTPS automatico via Let's Encrypt + security headers + rate limiting
+#
+# Requires DOMAIN env var pointing to your domain (e.g. bot.example.com)
+
+{$DOMAIN} {
+    # Reverse proxy to the bot container
+    reverse_proxy bot:8080 {
+        # WebSocket support
+        header_up Connection {>Connection}
+        header_up Upgrade {>Upgrade}
+        # Pass real client IP for logging
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+
+        # Health check - Caddy pings this to detect if backend is down
+        health_uri /api/health
+        health_interval 30s
+        health_timeout 5s
+    }
+
+    # Security headers
+    header {
+        # HSTS - force HTTPS for 1 year
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        # Prevent MIME sniffing
+        X-Content-Type-Options "nosniff"
+        # Clickjacking protection
+        X-Frame-Options "SAMEORIGIN"
+        # XSS protection
+        X-XSS-Protection "1; mode=block"
+        # Referrer policy
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # Permissions
+        Permissions-Policy "geolocation=(), camera=(), microphone=()"
+        # Remove server fingerprinting
+        -Server
+    }
+
+    # Compression
+    encode gzip zstd
+
+    # Access logs
+    log {
+        output file /data/access.log {
+            roll_size 10MB
+            roll_keep 5
+        }
+        format json
+    }
+
+    # Block common attack paths
+    @blocked {
+        path /.env /.git/* /wp-admin/* /wp-login.php /xmlrpc.php /phpmyadmin/* /.well-known/security.txt
+    }
+    respond @blocked 404
+
+    # Optional: basic auth on top of bot's own auth (uncomment and set hash)
+    # Generate hash with: docker exec -it <caddy-container> caddy hash-password
+    # basicauth /* {
+    #     admin $2a$14$HASH_HERE
+    # }
+}
+
+# Redirect HTTP -> HTTPS (Caddy does this automatically, but explicit is clearer)
+http://{$DOMAIN} {
+    redir https://{$DOMAIN}{uri} permanent
+}
