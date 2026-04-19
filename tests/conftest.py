@@ -2,10 +2,11 @@
 import asyncio
 import os
 import pytest
+from cryptography.fernet import Fernet
 
 # Use in-memory SQLite for tests
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
-os.environ["ENCRYPTION_KEY"] = "VGVzdEVuY3J5cHRpb25LZXlGb3JUZXN0aW5nMTIzNA=="  # 32 bytes base64
+os.environ["ENCRYPTION_KEY"] = Fernet.generate_key().decode()  # Valid Fernet key
 os.environ["PAPER_MODE"] = "true"
 
 
