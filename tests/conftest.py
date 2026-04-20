@@ -11,6 +11,20 @@ os.environ["PAPER_MODE"] = "true"
 
 @pytest.fixture(autouse=True)
 async def init_test_db():
-    from bot.database import init_db
+    """Give each test a fresh DB + clean runner state.
+
+    StaticPool shares the same SQLite :memory: connection across sessions, so
+    trades created by one test would otherwise leak into the next. We drop
+    and recreate the schema per test, and also clear the runner module's
+    global `_active_strategies` dict so a strategy started in one test does
+    not linger into the next one.
+    """
+    from bot.database import Base, engine, init_db
+    from bot.engine import runner
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
     await init_db()
+    runner._active_strategies.clear()
     yield
+    runner._active_strategies.clear()
