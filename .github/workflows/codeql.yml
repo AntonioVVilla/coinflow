@@ -42,18 +42,18 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
         run: |
-          # Give CodeQL a moment to publish the alerts for this ref.
-          sleep 15
-          REF="${{ github.event.pull_request.head.ref }}"
+          # Give CodeQL a moment to publish alerts for this SHA.
+          sleep 30
+          # Pull everything — we'll group per-ref below.
           curl -sS \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${REPO}/code-scanning/alerts?state=open&ref=refs/heads/${REF}&per_page=100" \
+            "https://api.github.com/repos/${REPO}/code-scanning/alerts?state=open&per_page=100" \
             > alerts.json || true
-          jq -r '.[] | "- [" + (.rule.id // "unknown") + "] " + (.most_recent_instance.location.path // "") + ":" + ((.most_recent_instance.location.start_line // 0) | tostring) + " — " + (.rule.description // .rule.name // "")' alerts.json > summary.txt || true
-          COUNT=$(wc -l < summary.txt || echo 0)
+          TOTAL=$(jq 'length' alerts.json 2>/dev/null || echo 0)
+          jq -r 'sort_by(.rule.id, .most_recent_instance.location.path, .most_recent_instance.location.start_line) | .[] | "- [" + (.rule.id // "unknown") + "] " + (.most_recent_instance.location.path // "") + ":" + ((.most_recent_instance.location.start_line // 0) | tostring) + " (ref: " + (.most_recent_instance.ref // "?") + ") — " + (.rule.description // .rule.name // "")' alerts.json > summary.txt || true
           {
-            echo "### 🛡️ Open code scanning alerts for \`${REF}\` (${COUNT})"
+            echo "### 🛡️ Open code scanning alerts repo-wide (${TOTAL})"
             echo ""
             if [ -s summary.txt ]; then
               echo '```'
