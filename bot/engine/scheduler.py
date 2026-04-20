@@ -3,6 +3,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
 
+from bot.log_utils import safe
+
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
@@ -12,7 +14,7 @@ def add_cron_job(job_id: str, func, hour: int = 9, minute: int = 0, **kwargs):
     """Schedule a job at a specific time daily."""
     trigger = CronTrigger(hour=hour, minute=minute)
     scheduler.add_job(func, trigger, id=job_id, replace_existing=True, **kwargs)
-    logger.info(f"Cron job '{job_id}' scheduled daily at {hour:02d}:{minute:02d}")
+    logger.info("Cron job '%s' scheduled daily at %02d:%02d", safe(job_id), hour, minute)
 
 
 def start_scheduler():
@@ -36,12 +38,12 @@ def add_job(job_id: str, func, seconds: int | None = None, hours: int | None = N
         trigger = IntervalTrigger(seconds=30)
 
     scheduler.add_job(func, trigger, id=job_id, replace_existing=True, **kwargs)
-    logger.info(f"Job '{job_id}' scheduled (interval: {seconds or 0}s / {hours or 0}h)")
+    logger.info("Job '%s' scheduled (interval: %ss / %sh)", safe(job_id), seconds or 0, hours or 0)
 
 
 def remove_job(job_id: str):
     try:
         scheduler.remove_job(job_id)
-        logger.info(f"Job '{job_id}' removed")
+        logger.info("Job '%s' removed", safe(job_id))
     except Exception as err:
-        logger.debug(f"remove_job({job_id}) ignored: {err}")
+        logger.debug("remove_job(%s) ignored: %s", safe(job_id), safe(err))

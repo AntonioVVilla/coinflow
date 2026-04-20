@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 from bot.notifications.config import load_channel, save_channel, delete_channel
@@ -6,6 +8,8 @@ from bot.notifications.telegram_notify import (
 )
 from bot.notifications.email_notify import send_email_test
 from bot.notifications.telegram_listener import restart_listener
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
@@ -62,7 +66,8 @@ async def validate_telegram_token(data: TokenOnly):
     ok, info = await validate_token(data.bot_token)
     if ok:
         return {"valid": True, "bot": info}
-    return {"valid": False, "error": info.get("error", "Token invalido")}
+    # validate_token already logs the real cause; return a sanitized message.
+    return {"valid": False, "error": "Token invalido"}
 
 
 @router.post("/telegram/detect-chat")
@@ -82,7 +87,10 @@ async def test_telegram(data: TelegramConfig):
     """Send a test message with provided credentials."""
     msg = "✅ CryptoBot conectado correctamente a Telegram"
     ok, err = await send_telegram_with(data.bot_token, data.chat_id, msg)
-    return {"ok": ok, "error": err}
+    if ok:
+        return {"ok": True, "error": ""}
+    logger.info("Telegram test failed: %s", err)
+    return {"ok": False, "error": "No se pudo enviar el mensaje de prueba"}
 
 
 @router.post("/daily-summary/send")
@@ -102,7 +110,10 @@ async def test_telegram_saved():
     if not token or not chat_id:
         return {"ok": False, "error": "No hay configuracion guardada"}
     ok, err = await send_telegram_with(token, chat_id, "✅ Prueba desde CryptoBot")
-    return {"ok": ok, "error": err}
+    if ok:
+        return {"ok": True, "error": ""}
+    logger.info("Telegram saved-config test failed: %s", err)
+    return {"ok": False, "error": "No se pudo enviar el mensaje de prueba"}
 
 
 @router.post("/telegram/save")
@@ -111,12 +122,13 @@ async def save_telegram(data: TelegramConfig):
     # Validate token
     ok, info = await validate_token(data.bot_token)
     if not ok:
-        return {"ok": False, "error": info.get("error", "Token invalido")}
+        return {"ok": False, "error": "Token invalido"}
 
     # Test send
     sent, err = await send_telegram_with(data.bot_token, data.chat_id, "✅ CryptoBot conectado")
     if not sent:
-        return {"ok": False, "error": f"Test fallo: {err}"}
+        logger.info("Telegram save test failed: %s", err)
+        return {"ok": False, "error": "Prueba de envio fallida"}
 
     # Save
     await save_channel("telegram", enabled=True, config={
@@ -181,7 +193,10 @@ async def test_email(data: EmailConfig):
         "CryptoBot: prueba de conexion",
         "Si recibes este mensaje, el SMTP esta configurado correctamente.",
     )
-    return {"ok": ok, "error": err}
+    if ok:
+        return {"ok": True, "error": ""}
+    logger.info("Email test failed: %s", err)
+    return {"ok": False, "error": "No se pudo enviar el correo de prueba"}
 
 
 @router.post("/email/save")
@@ -193,7 +208,8 @@ async def save_email(data: EmailConfig):
         "SMTP configurado correctamente.",
     )
     if not ok:
-        return {"ok": False, "error": err}
+        logger.info("Email save test failed: %s", err)
+        return {"ok": False, "error": "Prueba de envio fallida"}
 
     await save_channel("email", enabled=True, config=data.model_dump())
     return {"ok": True}

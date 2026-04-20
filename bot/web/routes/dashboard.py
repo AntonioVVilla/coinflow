@@ -155,10 +155,11 @@ async def diagnostic():
             "detail": f"{len(bal_map)} activos con saldo",
         })
     except Exception as e:
+        logger.warning("Diagnostic balance fetch failed: %s", e)
         report["checks"].append({
             "name": "Conexion API",
             "ok": False,
-            "detail": str(e)[:200],
+            "detail": "Fallo al consultar balances del exchange",
         })
         return report
 
@@ -194,10 +195,11 @@ async def diagnostic():
                 "tradeable": True,
             })
         except Exception as e:
+            logger.warning("Pair %s diagnostic failed: %s", sym, e)
             pair_checks.append({
                 "symbol": sym,
                 "ok": False,
-                "error": str(e)[:150],
+                "error": "No se pudo validar el par",
             })
     report["pairs"] = pair_checks
 
@@ -292,5 +294,6 @@ async def price_history(
                 ],
             }
     except Exception as e:
-        return {"data": [], "error": str(e)}
+        logger.warning("OHLCV fetch failed: %s", e)
+        return {"data": [], "error": "No se pudieron cargar velas"}
     return {"data": []}

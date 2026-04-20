@@ -142,13 +142,15 @@ async def run_backtest(
             strategy.amount_usd = params["amount_usd"]
             strategy.symbol = symbol
     except KeyError as e:
-        return {"ok": False, "error": f"Falta parametro: {e}"}
+        logger.warning("Backtest missing param: %s", e)
+        return {"ok": False, "error": "Falta un parametro obligatorio"}
 
     # Fetch historical candles
     try:
         ohlcv = await client._exchange.fetch_ohlcv(symbol, timeframe, limit=candles)
     except Exception as e:
-        return {"ok": False, "error": f"fetch_ohlcv: {e}"}
+        logger.warning("Backtest fetch_ohlcv failed: %s", e)
+        return {"ok": False, "error": "No se pudieron cargar velas historicas"}
 
     if not ohlcv or len(ohlcv) < 10:
         return {"ok": False, "error": "Datos historicos insuficientes"}

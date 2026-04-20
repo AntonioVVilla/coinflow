@@ -7,6 +7,7 @@ from bot.config import settings
 from bot.exchange.client import CoinbaseClient
 from bot.exchange.paper import PaperClient
 from bot.exchange.schemas import OrderRequest
+from bot.log_utils import safe
 from bot.strategies.base import BaseStrategy
 from bot.strategies.grid import GridStrategy
 from bot.strategies.dca import DCAStrategy
@@ -61,7 +62,7 @@ async def _execute_orders(strategy_name: str, orders: list[OrderRequest]) -> lis
 
             allowed, reason = await check_pre_trade(strategy_name, req.side, req.symbol, est_cost)
             if not allowed:
-                logger.warning(f"Trade blocked by risk mgmt ({strategy_name}): {reason}")
+                logger.warning("Trade blocked by risk mgmt (%s): %s", safe(strategy_name), safe(reason))
                 await notify("risk_blocked", {"strategy": strategy_name, "reason": reason})
                 results.append({
                     "ok": False, "status": "risk_blocked",
@@ -145,7 +146,7 @@ async def _execute_orders(strategy_name: str, orders: list[OrderRequest]) -> lis
             elif "permission" in low or "unauthorized" in low:
                 friendly = f"Permisos insuficientes en la API key. Detalle: {err_str[:200]}"
 
-            logger.error(f"Order execution failed ({strategy_name}): {err_str}")
+            logger.error("Order execution failed (%s): %s", safe(strategy_name), safe(err_str))
             await notify("strategy_error", {"strategy": strategy_name, "error": friendly})
             results.append({
                 "ok": False, "status": "error",
@@ -172,17 +173,17 @@ async def _strategy_tick(strategy_name: str, symbol: str):
         orders = await strategy.tick(ticker)
         await _execute_orders(strategy_name, orders)
     except Exception as e:
-        logger.error(f"Strategy tick error ({strategy_name}): {e}")
+        logger.error("Strategy tick error (%s): %s", safe(strategy_name), safe(e))
 
 
 async def start_strategy(name: str, symbol: str, params: dict) -> bool:
     if name in _active_strategies:
-        logger.warning(f"Strategy '{name}' already running")
+        logger.warning("Strategy '%s' already running", safe(name))
         return False
 
     cls = STRATEGY_CLASSES.get(name)
     if not cls:
-        logger.error(f"Unknown strategy: {name}")
+        logger.error("Unknown strategy: %s", safe(name))
         return False
 
     strategy = cls()
@@ -205,7 +206,7 @@ async def start_strategy(name: str, symbol: str, params: dict) -> bool:
             hours=interval_hours,
         )
 
-    logger.info(f"Strategy '{name}' started")
+    logger.info("Strategy '%s' started", safe(name))
     await notify("strategy_started", {"strategy": name, "symbol": symbol})
     return True
 
@@ -217,7 +218,7 @@ async def stop_strategy(name: str) -> bool:
 
     await strategy.teardown()
     sched.remove_job(f"strategy_{name}")
-    logger.info(f"Strategy '{name}' stopped")
+    logger.info("Strategy '%s' stopped", safe(name))
     await notify("strategy_stopped", {"strategy": name})
     return True
 
@@ -249,7 +250,10 @@ async def force_tick(name: str) -> dict:
         current_symbol = getattr(strategy, "symbol", "")
         # Symbol changed? Restart with new config
         if db_config.symbol != current_symbol:
-            logger.info(f"Strategy '{name}' config changed (symbol: {current_symbol} -> {db_config.symbol}), restarting")
+            logger.info(
+                "Strategy '%s' config changed (symbol: %s -> %s), restarting",
+                safe(name), safe(current_symbol), safe(db_config.symbol),
+            )
             await stop_strategy(name)
             await start_strategy(name, db_config.symbol, db_params)
             strategy = _active_strategies.get(name)
@@ -286,8 +290,8 @@ async def force_tick(name: str) -> dict:
             "message": message, "results": results,
         }
     except Exception as e:
-        logger.exception(f"force_tick error ({name}): {e}")
-        return {"ok": False, "error": str(e), "results": []}
+        logger.exception("force_tick error (%s): %s", safe(name), safe(e))
+        return {"ok": False, "error": "No se pudo ejecutar el tick", "results": []}
 
 
 def get_strategy_status(name: str) -> dict | None:
@@ -321,7 +325,8 @@ async def kill_switch() -> dict:
             await stop_strategy(name)
             stopped.append(name)
         except Exception as e:
-            errors.append(f"{name}: {e}")
+            logger.error("kill_switch stop_strategy(%s) failed: %s", safe(name), safe(e))
+            errors.append(f"stop {safe(name)}: fallo")
 
     # Deactivate in DB so they don't restart
     async with async_session() as session:
@@ -343,11 +348,14 @@ async def kill_switch() -> dict:
                             await client.cancel_order(o["id"], symbol)
                             cancelled += 1
                         except Exception as e:
-                            errors.append(f"cancel {o['id']}: {e}")
+                            logger.error("kill_switch cancel %s: %s", o.get("id"), safe(e))
+                            errors.append(f"cancel {safe(o.get('id'))}: fallo")
                 except Exception as e:
-                    errors.append(f"fetch_open_orders {symbol}: {e}")
+                    logger.error("kill_switch fetch_open_orders %s: %s", safe(symbol), safe(e))
+                    errors.append(f"fetch_open_orders {safe(symbol)}: fallo")
         except Exception as e:
-            errors.append(f"cancel_loop: {e}")
+            logger.error("kill_switch cancel_loop: %s", safe(e))
+            errors.append("cancel_loop: fallo")
 
     await notify("kill_switch", {"stopped": stopped, "cancelled_orders": cancelled})
     return {"stopped_strategies": stopped, "cancelled_orders": cancelled, "errors": errors}
@@ -364,4 +372,4 @@ async def load_active_strategies():
     for config in configs:
         params = json.loads(config.params)
         await start_strategy(config.name, config.symbol, params)
-        logger.info(f"Restored strategy '{config.name}' from DB")
+        logger.info("Restored strategy '%s' from DB", safe(config.name))

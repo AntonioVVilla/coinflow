@@ -83,7 +83,7 @@ class GridStrategy(BaseStrategy):
                     cost=self.amount_per_grid * price,  # USD cost for Coinbase
                 ))
                 self.active_orders[level] = "buy"
-                logger.info(f"Grid BUY triggered at level {level:.2f}")
+                logger.info("Grid BUY triggered at level %.2f", level)
 
             # Price crossed a grid level upward -> sell
             elif self.last_price < level <= price and level not in self.active_orders:
@@ -94,7 +94,7 @@ class GridStrategy(BaseStrategy):
                     amount=self.amount_per_grid,
                 ))
                 self.active_orders[level] = "sell"
-                logger.info(f"Grid SELL triggered at level {level:.2f}")
+                logger.info("Grid SELL triggered at level %.2f", level)
 
         # Reset filled levels so they can trigger again
         levels_to_reset = []

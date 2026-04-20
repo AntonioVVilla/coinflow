@@ -4,6 +4,7 @@ from sqlalchemy import select, func
 from bot.strategies.base import BaseStrategy
 from bot.exchange.schemas import Ticker, OrderRequest
 from bot.database import async_session
+from bot.log_utils import safe
 from bot.models import Trade
 
 logger = logging.getLogger(__name__)
@@ -59,7 +60,10 @@ class DCAStrategy(BaseStrategy):
             if price <= 0:
                 return []
             amount = self.amount_usd / price
-            logger.info(f"DCA tick: intent to spend ${self.amount_usd:.2f} on {self.symbol} (~{amount:.8f} @ ${price:.2f})")
+            logger.info(
+                "DCA tick: intent to spend $%.2f on %s (~%.8f @ $%.2f)",
+                self.amount_usd, safe(self.symbol), amount, price,
+            )
             return [OrderRequest(
                 symbol=self.symbol,
                 side="buy",
