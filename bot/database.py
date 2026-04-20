@@ -2,6 +2,7 @@ from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import StaticPool
 from bot.config import settings
 
 
@@ -9,7 +10,14 @@ class Base(DeclarativeBase):
     pass
 
 
-engine = create_async_engine(settings.database_url, echo=False)
+# In-memory SQLite URLs (used in tests) need StaticPool so every session shares
+# the same underlying connection — otherwise each checkout opens a fresh empty
+# DB and the tables created by init_db disappear.
+_engine_kwargs: dict = {"echo": False}
+if ":memory:" in settings.database_url:
+    _engine_kwargs.update(poolclass=StaticPool, connect_args={"check_same_thread": False})
+
+engine = create_async_engine(settings.database_url, **_engine_kwargs)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

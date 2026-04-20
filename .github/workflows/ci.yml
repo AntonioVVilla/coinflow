@@ -24,7 +24,7 @@ jobs:
         run: bash scripts/check-secrets.sh --all
 
       - name: Run tests
-        run: pytest -v
+        run: pytest -v --tb=short
 
   docker-build:
     runs-on: ubuntu-latest
