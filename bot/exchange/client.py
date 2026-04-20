@@ -94,8 +94,8 @@ class CoinbaseClient:
         if isinstance(fee, dict) and fee.get("cost"):
             try:
                 fee_val = float(fee["cost"])
-            except (ValueError, TypeError):
-                pass
+            except (ValueError, TypeError) as fee_err:
+                logger.debug(f"Could not parse fee cost: {fee_err}")
 
         status = order.get("status") or "filled"
         order_id = str(order.get("id") or "")
@@ -186,15 +186,18 @@ class CoinbaseClient:
             balances = await self.fetch_balance()
             return {"valid": True, "balances": {b.currency: b.total for b in balances}}
         except ccxt.AuthenticationError as e:
+            logger.warning("Coinbase auth error on validate_keys: %s", e)
             return {
                 "valid": False,
                 "error": (
                     "Invalid API key or secret. Para Coinbase Advanced/CDP: "
                     "el secret debe ser la EC Private Key COMPLETA en formato PEM "
-                    "(con BEGIN/END y saltos de linea). Detalle: " + str(e)[:200]
+                    "(con BEGIN/END y saltos de linea)."
                 ),
             }
         except ccxt.PermissionDenied as e:
-            return {"valid": False, "error": f"Key necesita permiso 'Trade'. Detalle: {str(e)[:200]}"}
+            logger.warning("Coinbase permission denied on validate_keys: %s", e)
+            return {"valid": False, "error": "La key no tiene permiso 'Trade'"}
         except Exception as e:
-            return {"valid": False, "error": f"Error: {type(e).__name__}: {str(e)[:300]}"}
+            logger.warning("Coinbase validate_keys failed: %s: %s", type(e).__name__, e)
+            return {"valid": False, "error": "No se pudo validar la key con Coinbase"}

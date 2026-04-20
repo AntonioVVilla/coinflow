@@ -22,8 +22,8 @@ async def take_snapshot():
             try:
                 ticker = await client.fetch_ticker(symbol)
                 prices[symbol] = ticker.last
-            except Exception:
-                pass
+            except Exception as ticker_err:
+                logger.debug(f"Ticker fetch failed for {symbol}: {ticker_err}")
 
         usd = balance_map.get("USD", 0) or 0
         btc = balance_map.get("BTC", 0) or 0

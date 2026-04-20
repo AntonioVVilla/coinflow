@@ -16,7 +16,10 @@ jobs:
 
       - name: Dependency Review
         uses: actions/dependency-review-action@v4
+        # Advisory-only: private repos without GitHub Advanced Security cannot
+        # block on this check, so keep it informational instead of failing CI.
+        continue-on-error: true
         with:
           fail-on-severity: high
-          comment-summary-in-pr: always
+          comment-summary-in-pr: on-failure
           deny-licenses: GPL-3.0, AGPL-3.0

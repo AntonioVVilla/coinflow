@@ -15,8 +15,10 @@ async def load_channel(channel: str) -> dict:
         row = result.scalar_one_or_none()
     if not row:
         return {"enabled": False}
+    config: dict = {}
     try:
-        config = json.loads(decrypt(row.config_enc)) if row.config_enc else {}
+        if row.config_enc:
+            config = json.loads(decrypt(row.config_enc))
     except Exception:
         config = {}
     config["enabled"] = row.is_enabled

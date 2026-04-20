@@ -5,12 +5,10 @@ returning detailed metrics (P&L, # trades, max drawdown, win rate).
 """
 import logging
 from dataclasses import dataclass, field
-from typing import Any
-from bot.exchange.schemas import Ticker, OrderRequest
+from bot.exchange.schemas import Ticker
 from bot.strategies.grid import GridStrategy
 from bot.strategies.dca import DCAStrategy
 from bot.engine.runner import get_exchange_client
-from bot.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +118,7 @@ async def run_backtest(
         return {"ok": False, "error": "Exchange not available"}
 
     # Instantiate strategy without DB-backed setup (backtest is isolated)
+    strategy: GridStrategy | DCAStrategy
     if strategy_name == "grid":
         strategy = GridStrategy()
     elif strategy_name == "dca":
@@ -131,7 +130,7 @@ async def run_backtest(
     params_copy = dict(params)
     params_copy["symbol"] = symbol
     try:
-        if strategy_name == "grid":
+        if isinstance(strategy, GridStrategy):
             strategy.lower_price = params["lower_price"]
             strategy.upper_price = params["upper_price"]
             strategy.num_grids = params.get("num_grids", 10)
@@ -139,17 +138,19 @@ async def run_backtest(
             strategy.symbol = symbol
             step = (strategy.upper_price - strategy.lower_price) / strategy.num_grids
             strategy.grid_levels = [strategy.lower_price + step * i for i in range(strategy.num_grids + 1)]
-        elif strategy_name == "dca":
+        elif isinstance(strategy, DCAStrategy):
             strategy.amount_usd = params["amount_usd"]
             strategy.symbol = symbol
     except KeyError as e:
-        return {"ok": False, "error": f"Falta parametro: {e}"}
+        logger.warning("Backtest missing param: %s", e)
+        return {"ok": False, "error": "Falta un parametro obligatorio"}
 
     # Fetch historical candles
     try:
         ohlcv = await client._exchange.fetch_ohlcv(symbol, timeframe, limit=candles)
     except Exception as e:
-        return {"ok": False, "error": f"fetch_ohlcv: {e}"}
+        logger.warning("Backtest fetch_ohlcv failed: %s", e)
+        return {"ok": False, "error": "No se pudieron cargar velas historicas"}
 
     if not ohlcv or len(ohlcv) < 10:
         return {"ok": False, "error": "Datos historicos insuficientes"}
@@ -167,8 +168,8 @@ async def run_backtest(
     dca_tick_every = max(1, int(dca_interval_hours / tf_hours)) if dca_interval_hours else 1
 
     for i, c in enumerate(ohlcv):
-        ts, o, h, l, cl, v = c
-        ticker = Ticker(symbol=symbol, last=cl, bid=cl, ask=cl, high=h, low=l, timestamp=ts)
+        ts, o, h, low, cl, v = c
+        ticker = Ticker(symbol=symbol, last=cl, bid=cl, ask=cl, high=h, low=low, timestamp=ts)
 
         # For DCA, tick only every N candles
         if strategy_name == "dca" and i % dca_tick_every != 0:

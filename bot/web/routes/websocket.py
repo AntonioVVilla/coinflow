@@ -41,8 +41,8 @@ async def _price_streamer():
                         try:
                             ticker = await client.fetch_ticker(symbol)
                             prices[symbol] = ticker.last
-                        except Exception:
-                            pass
+                        except Exception as ticker_err:
+                            logger.debug(f"Ticker fetch failed for {symbol}: {ticker_err}")
                     if prices:
                         await broadcast("prices", {
                             "prices": prices,

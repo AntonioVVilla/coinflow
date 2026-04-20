@@ -14,7 +14,7 @@ async def get_usd_to_eur() -> float:
     """Get current USD to EUR conversion rate (cached)."""
     now = time.time()
     if _cache["rate"] is not None and (now - _cache["ts"]) < _TTL:
-        return _cache["rate"]
+        return float(_cache["rate"])
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -32,4 +32,5 @@ async def get_usd_to_eur() -> float:
     except Exception as e:
         logger.warning(f"Failed to fetch USD/EUR rate: {e}")
 
-    return _cache["rate"] or _FALLBACK
+    rate = _cache["rate"]
+    return float(rate) if rate is not None else _FALLBACK
