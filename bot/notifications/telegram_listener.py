@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, Awaitable
 
 import aiohttp
-from sqlalchemy import select, desc, func
+from sqlalchemy import select, desc
 
 from bot.database import async_session
 from bot.models import Trade, RiskConfig, StrategyConfig
@@ -90,17 +90,17 @@ async def cmd_status(args: list[str]) -> str:
                 prices[sym] = t.last
                 base = sym.split("/")[0]
                 total_usd += (balance_map.get(base, 0) or 0) * t.last
-            except Exception:
-                pass
+            except Exception as ticker_err:
+                logger.debug(f"Ticker fetch failed for {sym}: {ticker_err}")
 
         mode = "🟡 PAPER" if settings.paper_mode else "🟢 LIVE"
         running = get_all_statuses()
 
         lines = [
-            f"*📊 Portfolio*",
+            "*📊 Portfolio*",
             f"Total: *${total_usd:,.2f}*",
             f"Modo: {mode}",
-            f"",
+            "",
         ]
         for cur, val in sorted(balance_map.items()):
             if val and val > 0:
@@ -140,8 +140,8 @@ async def cmd_prices(args: list[str]) -> str:
             try:
                 t = await client.fetch_ticker(sym)
                 lines.append(f"*{sym}*: `${t.last:,.2f}`")
-            except Exception:
-                pass
+            except Exception as ticker_err:
+                logger.debug(f"Ticker fetch failed for {sym}: {ticker_err}")
         return "\n".join(lines)
     except Exception as e:
         return f"⚠️ Error: {e}"

@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func, desc
@@ -8,6 +9,7 @@ from bot.engine.runner import get_exchange_client, get_all_statuses
 from bot.exchange.forex import get_usd_to_eur
 from bot.config import settings
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 
@@ -21,8 +23,8 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
         try:
             raw = await client.fetch_balance()
             balances = {b.currency: {"free": b.free, "total": b.total} for b in raw}
-        except Exception:
-            pass
+        except Exception as bal_err:
+            logger.debug(f"Dashboard balance fetch failed: {bal_err}")
 
     # Current prices
     prices = {}
@@ -31,8 +33,8 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
             try:
                 ticker = await client.fetch_ticker(symbol)
                 prices[symbol] = ticker.last
-            except Exception:
-                pass
+            except Exception as ticker_err:
+                logger.debug(f"Ticker fetch failed for {symbol}: {ticker_err}")
 
     # Get USD/EUR rate for EUR -> USD conversion
     eur_rate = await get_usd_to_eur()
@@ -68,26 +70,26 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
     total_usd = sum(asset_usd.values())
 
     # Recent trades
-    result = await db.execute(
+    recent_result = await db.execute(
         select(Trade).order_by(desc(Trade.created_at)).limit(10)
     )
-    recent_trades = result.scalars().all()
+    recent_trades = recent_result.scalars().all()
 
     # Trade stats
-    result = await db.execute(
+    buys_result = await db.execute(
         select(
             func.count(Trade.id),
             func.sum(Trade.cost),
         ).where(Trade.side == "buy")
     )
-    row = result.one()
-    total_buys = row[0] or 0
-    total_invested = row[1] or 0
+    buys_row = buys_result.one()
+    total_buys: int = buys_row[0] or 0
+    total_invested: float = float(buys_row[1] or 0)
 
-    result = await db.execute(
+    sells_result = await db.execute(
         select(func.sum(Trade.cost)).where(Trade.side == "sell")
     )
-    total_sold = result.scalar() or 0
+    total_sold: float = float(sells_result.scalar() or 0)
 
     # Strategy statuses
     strategies = get_all_statuses()

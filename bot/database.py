@@ -1,3 +1,5 @@
+from collections.abc import AsyncGenerator
+
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 from bot.config import settings
@@ -35,8 +37,8 @@ async def _run_migrations():
 
     async with engine.begin() as conn:
         for table, column, definition in migrations:
-            assert (table, column, definition) in _SAFE_MIGRATIONS, \
-                f"Migration not in allowlist: {table}.{column}"
+            if (table, column, definition) not in _SAFE_MIGRATIONS:
+                raise RuntimeError(f"Migration not in allowlist: {table}.{column}")
             try:
                 await conn.execute(
                     __import__("sqlalchemy").text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
@@ -49,6 +51,6 @@ async def _run_migrations():
                     logger.debug(f"Migration {table}.{column} skipped: {e}")
 
 
-async def get_session() -> AsyncSession:
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async with async_session() as session:
         yield session

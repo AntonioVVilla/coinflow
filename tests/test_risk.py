@@ -1,8 +1,5 @@
 """Tests for risk management pre-trade checks."""
 import pytest
-from sqlalchemy import select
-from bot.database import async_session
-from bot.models import RiskConfig
 
 
 @pytest.mark.asyncio

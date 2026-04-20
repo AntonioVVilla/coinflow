@@ -1,6 +1,5 @@
 """Tests for engine runner (strategy management)."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from bot.engine.runner import (
     get_exchange_client,
     init_exchange,

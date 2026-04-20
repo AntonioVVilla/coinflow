@@ -1,5 +1,4 @@
 from cryptography.fernet import Fernet
-from pathlib import Path
 from bot.config import settings
 
 _fernet: Fernet | None = None

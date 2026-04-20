@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     # App
     paper_mode: bool = True
     log_level: str = "INFO"
-    host: str = "0.0.0.0"
+    host: str = "0.0.0.0"  # nosec B104  # noqa: S104 - intended to listen on all interfaces inside the container
     port: int = 8080
     data_dir: Path = Path("data")
 

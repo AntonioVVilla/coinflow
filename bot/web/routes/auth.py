@@ -70,7 +70,7 @@ async def disable_auth(data: LoginData, db: AsyncSession = Depends(get_db)):
         raise HTTPException(401, "Password incorrecto")
 
     config.enabled = False
-    config.password_hash = ""
+    config.password_hash = ""  # nosec B105 - clearing stored hash, not a password literal
     await db.commit()
     return {"ok": True}
 

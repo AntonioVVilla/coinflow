@@ -45,8 +45,8 @@ async def accounts():
         try:
             t = await client.fetch_ticker(sym)
             prices[sym] = t.last
-        except Exception:
-            pass
+        except Exception as ticker_err:
+            logger.debug(f"Ticker fetch failed for {sym}: {ticker_err}")
 
     accounts = []
     total_usd = 0
@@ -158,8 +158,10 @@ async def sync_trades(
                 fee_cost = 0.0
                 fee = t.get("fee") or {}
                 if isinstance(fee, dict) and fee.get("cost"):
-                    try: fee_cost = float(fee["cost"])
-                    except: pass
+                    try:
+                        fee_cost = float(fee["cost"])
+                    except (TypeError, ValueError):
+                        logger.debug("Could not parse fee cost for synced trade")
 
                 trade = Trade(
                     strategy="synced",

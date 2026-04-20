@@ -1,11 +1,10 @@
 """Daily summary: recaps the last 24h and sends to Telegram + Email."""
 import logging
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, desc
 from bot.database import async_session
 from bot.models import Trade, PortfolioSnapshot
 from bot.engine.runner import get_exchange_client, get_all_statuses
-from bot.notifications.dispatcher import notify
 from bot.notifications.config import load_channel
 from bot.notifications.telegram_notify import send_telegram_with
 from bot.notifications.email_notify import send_email_test
@@ -35,8 +34,8 @@ async def build_daily_summary() -> dict:
                 try:
                     t = await client.fetch_ticker(sym)
                     prices[sym] = t.last
-                except Exception:
-                    pass
+                except Exception as ticker_err:
+                    logger.debug(f"Ticker fetch failed for {sym}: {ticker_err}")
 
             eur_rate = await get_usd_to_eur()
             usd_per_eur = (1 / eur_rate) if eur_rate else 1.18
@@ -61,25 +60,25 @@ async def build_daily_summary() -> dict:
     # Portfolio change (compare with 24h ago snapshot)
     yesterday_total = None
     async with async_session() as session:
-        result = await session.execute(
+        snapshot_result = await session.execute(
             select(PortfolioSnapshot)
             .where(PortfolioSnapshot.snapshot_at <= since)
             .order_by(desc(PortfolioSnapshot.snapshot_at))
             .limit(1)
         )
-        row = result.scalar_one_or_none()
-        if row:
-            yesterday_total = row.total_usd
+        snapshot_row = snapshot_result.scalar_one_or_none()
+        if snapshot_row:
+            yesterday_total = snapshot_row.total_usd
 
     change_usd = current_total - yesterday_total if yesterday_total else 0
     change_pct = (change_usd / yesterday_total * 100) if yesterday_total else 0
 
     # Trades in last 24h
     async with async_session() as session:
-        result = await session.execute(
+        trades_result = await session.execute(
             select(Trade).where(Trade.created_at >= since).order_by(desc(Trade.created_at))
         )
-        trades = result.scalars().all()
+        trades = list(trades_result.scalars().all())
 
         # Aggregates
         buys = [t for t in trades if t.side == "buy"]
@@ -89,10 +88,10 @@ async def build_daily_summary() -> dict:
         fees = sum(t.fee for t in trades)
 
         # By strategy
-        by_strategy = {}
+        by_strategy: dict[str, dict[str, float]] = {}
         for t in trades:
             if t.strategy not in by_strategy:
-                by_strategy[t.strategy] = {"count": 0, "buys": 0, "sells": 0, "volume": 0}
+                by_strategy[t.strategy] = {"count": 0, "buys": 0, "sells": 0, "volume": 0.0}
             by_strategy[t.strategy]["count"] += 1
             by_strategy[t.strategy]["volume"] += t.cost
             if t.side == "buy":

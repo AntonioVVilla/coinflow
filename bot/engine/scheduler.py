@@ -43,5 +43,5 @@ def remove_job(job_id: str):
     try:
         scheduler.remove_job(job_id)
         logger.info(f"Job '{job_id}' removed")
-    except Exception:
-        pass
+    except Exception as err:
+        logger.debug(f"remove_job({job_id}) ignored: {err}")

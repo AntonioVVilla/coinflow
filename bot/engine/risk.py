@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, func
 from bot.database import async_session
-from bot.models import RiskConfig, Trade, PortfolioSnapshot
+from bot.models import RiskConfig, PortfolioSnapshot
 from bot.engine.runner import get_exchange_client
 from bot.config import settings
 
@@ -43,8 +43,8 @@ async def check_pre_trade(strategy: str, side: str, symbol: str, cost_usd: float
             try:
                 ticker = await client.fetch_ticker(sym)
                 prices[sym] = ticker.last
-            except Exception:
-                pass
+            except Exception as ticker_err:
+                logger.debug(f"Ticker fetch failed for {sym}: {ticker_err}")
 
         total_usd = balance_map.get("USD", 0) or 0
         btc_value = (balance_map.get("BTC", 0) or 0) * prices.get("BTC/USD", 0)
@@ -60,8 +60,8 @@ async def check_pre_trade(strategy: str, side: str, symbol: str, cost_usd: float
             if config.daily_reference_at is None or \
                config.daily_reference_at.date() < now.date():
                 async with async_session() as session:
-                    result = await session.execute(select(RiskConfig).limit(1))
-                    rc = result.scalar_one_or_none()
+                    ref_result = await session.execute(select(RiskConfig).limit(1))
+                    rc = ref_result.scalar_one_or_none()
                     if rc:
                         rc.daily_reference_usd = total_usd
                         rc.daily_reference_at = now
@@ -75,11 +75,12 @@ async def check_pre_trade(strategy: str, side: str, symbol: str, cost_usd: float
         if config.max_drawdown_pct > 0:
             since = now - timedelta(days=30)
             async with async_session() as session:
-                result = await session.execute(
+                peak_result = await session.execute(
                     select(func.max(PortfolioSnapshot.total_usd))
                     .where(PortfolioSnapshot.snapshot_at >= since)
                 )
-                peak = result.scalar() or total_usd
+                peak_value = peak_result.scalar()
+                peak: float = float(peak_value) if peak_value is not None else total_usd
                 if peak > 0:
                     dd = (peak - total_usd) / peak * 100
                     if dd >= config.max_drawdown_pct:

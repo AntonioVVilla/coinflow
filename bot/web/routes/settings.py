@@ -60,8 +60,8 @@ async def save_exchange_keys(data: ExchangeKeys, db: AsyncSession = Depends(get_
         await client.close()
 
     # Delete existing keys
-    result = await db.execute(select(ApiKey).where(ApiKey.exchange == "coinbase"))
-    existing = result.scalar_one_or_none()
+    existing_result = await db.execute(select(ApiKey).where(ApiKey.exchange == "coinbase"))
+    existing = existing_result.scalar_one_or_none()
     if existing:
         await db.delete(existing)
 
@@ -114,12 +114,12 @@ async def toggle_mode(db: AsyncSession = Depends(get_db)):
 
     # Reinitialize exchange client based on new mode
     api_key = ""
-    api_secret = ""
+    api_secret = ""  # nosec B105 - placeholder for unset exchange credentials
     if not settings.paper_mode:
-        result = await db.execute(
-            select(ApiKey).where(ApiKey.exchange == "coinbase", ApiKey.is_valid == True)
+        key_result = await db.execute(
+            select(ApiKey).where(ApiKey.exchange == "coinbase", ApiKey.is_valid.is_(True))
         )
-        key = result.scalar_one_or_none()
+        key = key_result.scalar_one_or_none()
         if key:
             api_key = decrypt(key.api_key_enc)
             api_secret = decrypt(key.api_secret_enc)

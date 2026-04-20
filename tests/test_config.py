@@ -1,5 +1,4 @@
 """Tests for configuration settings."""
-import pytest
 from bot.config import settings, Settings
 
 
@@ -52,7 +51,6 @@ def test_settings_grid_tick_must_be_positive():
 
 def test_settings_env_file_loading(tmp_path, monkeypatch):
     """Test that settings loads from .env file."""
-    import os
     env_file = tmp_path / ".env"
     env_file.write_text("PAPER_MODE=false\nLOG_LEVEL=DEBUG\n")
 

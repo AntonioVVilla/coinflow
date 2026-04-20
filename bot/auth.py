@@ -3,7 +3,6 @@ import hmac
 import logging
 import secrets
 import time
-from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import Cookie, HTTPException, Request

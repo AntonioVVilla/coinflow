@@ -23,7 +23,7 @@ STRATEGY_CLASSES: dict[str, type[BaseStrategy]] = {
 }
 
 _active_strategies: dict[str, BaseStrategy] = {}
-_exchange_client = None
+_exchange_client: PaperClient | CoinbaseClient | None = None
 
 
 def get_exchange_client():
@@ -69,13 +69,14 @@ async def _execute_orders(strategy_name: str, orders: list[OrderRequest]) -> lis
                     "side": req.side, "symbol": req.symbol, "amount": req.amount,
                 })
                 if strategy_obj and hasattr(strategy_obj, "on_trade_failed"):
-                    try: await strategy_obj.on_trade_failed(req, reason)
-                    except Exception: pass
+                    try:
+                        await strategy_obj.on_trade_failed(req, reason)
+                    except Exception as cb_err:
+                        logger.debug(f"on_trade_failed callback error: {cb_err}")
                 continue
 
             result = await client.create_order(req)
             # Save trade to DB (with error handling - order already executed on exchange)
-            db_saved = True
             try:
                 async with async_session() as session:
                     trade = Trade(
@@ -94,7 +95,6 @@ async def _execute_orders(strategy_name: str, orders: list[OrderRequest]) -> lis
                     session.add(trade)
                     await session.commit()
             except Exception as db_err:
-                db_saved = False
                 logger.error(f"Trade {result.order_id} executed but DB save failed: {db_err}")
                 await notify("strategy_error", {
                     "strategy": strategy_name,
@@ -115,13 +115,15 @@ async def _execute_orders(strategy_name: str, orders: list[OrderRequest]) -> lis
             try:
                 from bot.web.routes.websocket import broadcast
                 await broadcast("trade", trade_event)
-            except Exception:
-                pass
+            except Exception as ws_err:
+                logger.debug(f"Websocket broadcast failed: {ws_err}")
 
             # Notify strategy of success
             if strategy_obj and hasattr(strategy_obj, "on_trade_executed"):
-                try: await strategy_obj.on_trade_executed(result)
-                except Exception: pass
+                try:
+                    await strategy_obj.on_trade_executed(result)
+                except Exception as cb_err:
+                    logger.debug(f"on_trade_executed callback error: {cb_err}")
 
             results.append({
                 "ok": True, "status": "filled",
@@ -151,8 +153,10 @@ async def _execute_orders(strategy_name: str, orders: list[OrderRequest]) -> lis
                 "side": req.side, "symbol": req.symbol, "amount": req.amount,
             })
             if strategy_obj and hasattr(strategy_obj, "on_trade_failed"):
-                try: await strategy_obj.on_trade_failed(req, friendly)
-                except Exception: pass
+                try:
+                    await strategy_obj.on_trade_failed(req, friendly)
+                except Exception as cb_err:
+                    logger.debug(f"on_trade_failed callback error: {cb_err}")
 
     return results
 
@@ -353,7 +357,7 @@ async def load_active_strategies():
     """Load and start strategies that were active before restart."""
     async with async_session() as session:
         result = await session.execute(
-            select(StrategyConfig).where(StrategyConfig.is_active == True)
+            select(StrategyConfig).where(StrategyConfig.is_active.is_(True))
         )
         configs = result.scalars().all()
 

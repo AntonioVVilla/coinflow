@@ -1,6 +1,4 @@
-import asyncio
 import logging
-from pathlib import Path
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -45,10 +43,10 @@ async def startup():
     from bot.system_config import get_config, set_config
 
     api_key = ""
-    api_secret = ""
+    api_secret = ""  # nosec B105 - placeholder for unset exchange credentials
     async with async_session() as session:
         result = await session.execute(
-            select(ApiKey).where(ApiKey.exchange == "coinbase", ApiKey.is_valid == True)
+            select(ApiKey).where(ApiKey.exchange == "coinbase", ApiKey.is_valid.is_(True))
         )
         key_row = result.scalar_one_or_none()
         if key_row:
