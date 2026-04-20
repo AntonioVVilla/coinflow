@@ -108,8 +108,14 @@ async def test_force_tick_error_not_running():
 
 
 @pytest.mark.asyncio
-async def test_kill_switch_stops_all():
+async def test_kill_switch_stops_all(monkeypatch):
+    # Replace the real PaperClient (which drives ccxt → live Coinbase) with a
+    # mock so kill_switch() does not try to cancel open orders against the
+    # network – that branch is skipped when the client has no `_exchange`.
+    from bot.engine import runner as runner_mod
+
     await init_exchange("", "")
+    monkeypatch.setattr(runner_mod, "_exchange_client", MockExchangeClient())
     await start_strategy("dca", "BTC/USD", {"amount_usd": 10, "interval_hours": 24})
     await start_strategy("grid", "ETH/USD", {"lower_price": 1000, "upper_price": 2000, "num_grids": 3, "amount_per_grid": 0.01})
 

@@ -1,15 +1,19 @@
-"""Integration tests for API endpoints."""
+"""Integration tests for API endpoints.
+
+The real `bot.main.lifespan` hook performs live network calls to Coinbase via
+ccxt (prices snapshot, websocket streamer, Telegram listener). In the test
+environment we skip those side effects and exercise the FastAPI routes in
+isolation – the init_test_db autouse fixture in conftest.py already sets up
+the in-memory DB the routes need.
+"""
 import pytest
 from httpx import AsyncClient, ASGITransport
 from bot.web.app import create_app
-from bot.main import lifespan
 
 
 @pytest.fixture
 def app():
-    app = create_app()
-    app.router.lifespan_context = lifespan
-    return app
+    return create_app()
 
 
 @pytest.mark.asyncio
