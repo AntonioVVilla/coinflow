@@ -16,6 +16,8 @@ COPY --from=builder /install /usr/local
 
 # Copy application code
 COPY bot/ ./bot/
+COPY alembic/ ./alembic/
+COPY alembic.ini .
 COPY .env.example .
 
 # Create data directory
