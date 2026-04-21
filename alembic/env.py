@@ -1,43 +1,54 @@
 """Alembic migration environment.
 
-Pulls the database URL from bot.config.settings (which reads the same
-DATABASE_URL env var the app uses in runtime) and uses the metadata from
-bot.db_base.Base so `alembic revision --autogenerate` picks up every ORM
-class declared in bot.models.
+Uses a *synchronous* SQLAlchemy engine on purpose. Alembic is only ever
+invoked at startup (via `init_db`) or by one-off `docker compose run
+alembic ...` commands; neither needs async. Going through
+`async_engine_from_config` + `asyncio.run` from inside `asyncio.to_thread`
+was deadlocking against the app's own async engine when both pointed at
+the same SQLite file.
+
+The app's runtime engine stays async (see `bot.database`). This module only
+runs DDL migrations, which are synchronous by nature.
 """
-import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy import pool
+from sqlalchemy import engine_from_config, pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
 from bot.config import settings
 from bot.db_base import Base
-from bot import models  # noqa: F401 — import registers every table on Base.metadata
+from bot import models  # noqa: F401 — registers every ORM class on Base.metadata
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Always drive migrations with the live app URL so prod/dev/test are consistent.
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Always drive migrations with the live app URL so prod/dev/test are
+# consistent. Alembic itself runs synchronously, so strip any async driver
+# marker from the URL (e.g. sqlite+aiosqlite:// → sqlite://) to avoid
+# dragging aiosqlite into the migration path.
+_runtime_url = settings.database_url
+_sync_url = (
+    _runtime_url
+    .replace("sqlite+aiosqlite://", "sqlite://")
+    .replace("postgresql+asyncpg://", "postgresql+psycopg://")
+)
+config.set_main_option("sqlalchemy.url", _sync_url)
 
 target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode."""
-    url = config.get_main_option("sqlalchemy.url")
+    """Run migrations in 'offline' mode (SQL script generation)."""
     context.configure(
-        url=url,
+        url=_sync_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        render_as_batch=True,  # SQLite needs batch mode for ALTER
+        render_as_batch=True,  # SQLite needs batch mode for ALTER TABLE
     )
 
     with context.begin_transaction():
@@ -55,21 +66,17 @@ def do_run_migrations(connection: Connection) -> None:
         context.run_migrations()
 
 
-async def run_async_migrations() -> None:
-    connectable = async_engine_from_config(
+def run_migrations_online() -> None:
+    connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
 
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
+    with connectable.connect() as connection:
+        do_run_migrations(connection)
 
-    await connectable.dispose()
-
-
-def run_migrations_online() -> None:
-    asyncio.run(run_async_migrations())
+    connectable.dispose()
 
 
 if context.is_offline_mode():
