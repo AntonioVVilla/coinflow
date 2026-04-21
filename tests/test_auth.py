@@ -78,7 +78,7 @@ async def test_require_auth_passes_for_public_endpoints():
 
 
 @pytest.mark.asyncio
-async def test_require_auth_rejects_protected_without_session():
+async def test_require_auth_rejects_protected_without_session(monkeypatch):
     from fastapi import Request, HTTPException
     from unittest.mock import MagicMock, AsyncMock
 
@@ -88,7 +88,10 @@ async def test_require_auth_rejects_protected_without_session():
     import bot.auth as auth_module
     auth_module._sessions.clear()
 
-    auth_module.is_auth_enabled = AsyncMock(return_value=True)
+    # Use monkeypatch so the replacement is rolled back at teardown; otherwise
+    # `is_auth_enabled` stays stubbed and later tests that hit protected
+    # endpoints unexpectedly receive 401.
+    monkeypatch.setattr(auth_module, "is_auth_enabled", AsyncMock(return_value=True))
 
     try:
         await require_auth(request, session_token="invalid-token")

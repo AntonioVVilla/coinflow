@@ -75,6 +75,17 @@ async def update_strategy(name: str, data: StrategyUpdate, db: AsyncSession = De
             raise HTTPException(400, "Monto por compra debe ser > 0")
         if data.params.get("interval_hours", 0) <= 0:
             raise HTTPException(400, "Intervalo debe ser > 0 horas")
+        # Optional SL/TP: 0 means disabled; upper bound 50% keeps users from
+        # setting nonsensical triggers (an SL > 50% of avg price is basically
+        # "sell on total collapse" which the risk module already covers).
+        for field in ("stop_loss_pct", "take_profit_pct"):
+            value = data.params.get(field, 0) or 0
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                raise HTTPException(400, f"{field} debe ser numerico")
+            if numeric < 0 or numeric > 50:
+                raise HTTPException(400, f"{field} debe estar entre 0 y 50")
 
     was_running = get_strategy_status(name) is not None
 

@@ -27,6 +27,16 @@ def _format_message(event_type: str, payload: dict) -> str:
             f"KILL SWITCH activado. Estrategias detenidas: {len(payload.get('stopped', []))}. "
             f"Ordenes canceladas: {payload.get('cancelled_orders', 0)}"
         )
+    elif event_type == "sl_tp_triggered":
+        kind = "STOP-LOSS" if payload.get("kind") == "stop_loss" else "TAKE-PROFIT"
+        avg = payload.get("avg_buy_price") or 0
+        price = payload.get("price") or 0
+        pct = ((price - avg) / avg * 100) if avg else 0
+        return (
+            f"{kind} disparado en '{payload.get('strategy','?')}' "
+            f"({payload.get('symbol','?')}): avg=${avg:,.2f} → last=${price:,.2f} ({pct:+.2f}%), "
+            f"venta {payload.get('amount',0):.8f}"
+        )
     else:
         return f"[{event_type}] {payload}"
 

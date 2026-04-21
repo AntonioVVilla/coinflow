@@ -1,8 +1,20 @@
-// Chart.js defaults
-if (window.Chart) {
-    Chart.defaults.color = '#8b8fa0';
-    Chart.defaults.borderColor = '#2a2e3e';
+// Chart.js defaults. Colors come from CSS custom properties so they follow
+// the active theme; applyChartTheme() re-applies them on light/dark toggle.
+function applyChartTheme() {
+    if (!window.Chart) return;
+    const css = getComputedStyle(document.documentElement);
+    Chart.defaults.color = css.getPropertyValue('--text-dim').trim() || '#8b8fa0';
+    Chart.defaults.borderColor = css.getPropertyValue('--grid-line').trim() || '#2a2e3e';
     Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+}
+applyChartTheme();
+
+// chartjs-plugin-zoom needs to be explicitly registered even though it is
+// loaded globally; otherwise Chart.js won't invoke its hooks.
+if (window.Chart && window['chartjs-plugin-zoom']) {
+    try { Chart.register(window['chartjs-plugin-zoom']); } catch (e) { /* already registered */ }
+} else if (window.Chart && window.ChartZoom) {
+    try { Chart.register(window.ChartZoom); } catch (e) { /* ignore */ }
 }
 
 // Register service worker for PWA
@@ -27,6 +39,10 @@ function app() {
         // UI state
         page: 'dashboard',
         currency: localStorage.getItem('currency') || 'USD',
+        theme: document.documentElement.dataset.theme || 'dark',
+        metrics: null,
+        metricsDaysSelected: 30,
+        tradeSort: { order_by: 'created_at', order_dir: 'desc' },
         tradeDetail: null,
         tickResult: null,
         diagnostic: null,
@@ -92,9 +108,13 @@ function app() {
             await this.checkAuth();
             if (this.authRequired && !this.authenticated) return;
             await this.loadAll();
+            this.loadMetrics(this.metricsDaysSelected);
             this.connectWS();
             this.refreshTimer = setInterval(() => {
-                if (this.page === 'dashboard') this.loadDashboard();
+                if (this.page === 'dashboard') {
+                    this.loadDashboard();
+                    this.loadMetrics(this.metricsDaysSelected);
+                }
             }, 30000);
 
             // Re-render charts when window resizes (debounced)
@@ -106,6 +126,34 @@ function app() {
                     if (this.page === 'trades') this.renderTradeCharts();
                 }, 300);
             });
+        },
+
+        // ----- Theme handling -----
+        toggleTheme() {
+            this.theme = this.theme === 'dark' ? 'light' : 'dark';
+            document.documentElement.dataset.theme = this.theme;
+            try { localStorage.setItem('cryptobot.theme', this.theme); } catch (e) { /* ignore */ }
+            applyChartTheme();
+            // Chart.js doesn't react to CSS var changes; touch every live chart
+            // so the new palette is applied before the next draw.
+            if (this.charts) {
+                Object.values(this.charts).forEach((ch) => {
+                    if (ch && typeof ch.update === 'function') ch.update();
+                });
+            }
+        },
+
+        // ----- Performance metrics -----
+        async loadMetrics(days) {
+            this.metricsDaysSelected = days || this.metricsDaysSelected;
+            const d = await this.api('/api/metrics/summary?days=' + this.metricsDaysSelected);
+            if (d) this.metrics = d;
+        },
+        formatHold(seconds) {
+            if (!seconds || seconds <= 0) return '—';
+            if (seconds < 3600) return Math.round(seconds / 60) + ' min';
+            if (seconds < 86400) return (seconds / 3600).toFixed(1) + ' h';
+            return (seconds / 86400).toFixed(1) + ' d';
         },
 
         // ============= AUTH =============
@@ -447,8 +495,26 @@ function app() {
             if (this.tradeFilters.symbol) params.set('symbol', this.tradeFilters.symbol);
             if (this.tradeFilters.side) params.set('side', this.tradeFilters.side);
             if (this.tradeFilters.since_hours) params.set('since_hours', this.tradeFilters.since_hours);
+            params.set('order_by', this.tradeSort.order_by);
+            params.set('order_dir', this.tradeSort.order_dir);
             const d = await this.api('/api/trades?' + params);
             if (d) this.tradesData = d;
+        },
+        sortTrades(column) {
+            // Clicking the same column flips direction; switching columns resets to desc
+            // (the default most users expect for dates/numbers).
+            if (this.tradeSort.order_by === column) {
+                this.tradeSort.order_dir = this.tradeSort.order_dir === 'asc' ? 'desc' : 'asc';
+            } else {
+                this.tradeSort.order_by = column;
+                this.tradeSort.order_dir = 'desc';
+            }
+            this.tradeFilters.page = 1;
+            this.loadTrades();
+        },
+        sortIndicator(column) {
+            if (this.tradeSort.order_by !== column) return '';
+            return this.tradeSort.order_dir === 'asc' ? '▲' : '▼';
         },
         async loadStats() {
             const d = await this.api('/api/trades/stats?since_hours=' + this.tradeFilters.since_hours);
@@ -735,9 +801,18 @@ function app() {
                 type: 'line',
                 data: { datasets: [{ label: 'Portfolio (' + cur + ')', data: raw, borderColor: '#6366f1', backgroundColor: grad, fill: true, tension: 0.3, pointRadius: raw.length < 10 ? 3 : 0, borderWidth: 2 }]},
                 options: { responsive: true, maintainAspectRatio: false,
-                    plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => sym + c.parsed.y.toFixed(2) }}},
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { callbacks: { label: c => sym + c.parsed.y.toFixed(2) }},
+                        zoom: {
+                            pan: { enabled: true, mode: 'x' },
+                            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+                            limits: { x: { minRange: 60 * 60 * 1000 } },
+                        },
+                    },
                     scales: {
-                        x: { type: 'time', time: { tooltipFormat: 'PPp' }, grid: { color: 'rgba(255,255,255,0.04)' }},
+                        x: { type: 'time', time: { tooltipFormat: 'PPp' }, grid: { color: 'var(--grid-line)' }},
                         y: yOpts,
                     }}
             });
@@ -870,14 +945,27 @@ function app() {
                     ]
                 },
                 options: { responsive: true, maintainAspectRatio: false,
-                    plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12 }},
-                        tooltip: { callbacks: { label: c => {
+                    plugins: {
+                        legend: { display: true, position: 'top', labels: { boxWidth: 12 }},
+                        tooltip: { mode: 'index', intersect: false, callbacks: { label: c => {
                             if (c.dataset.type === 'scatter') return `${c.dataset.label}: ${sym}${c.parsed.y.toFixed(2)}`;
                             const d = c.raw;
                             return [`O: ${sym}${d.o.toFixed(2)}`, `H: ${sym}${d.h.toFixed(2)}`, `L: ${sym}${d.l.toFixed(2)}`, `C: ${sym}${d.c.toFixed(2)}`];
-                        }}}},
+                        }}},
+                        zoom: {
+                            pan: { enabled: true, mode: 'x', modifierKey: null },
+                            zoom: {
+                                wheel: { enabled: true },
+                                pinch: { enabled: true },
+                                drag: { enabled: false },
+                                mode: 'x',
+                            },
+                            limits: { x: { minRange: 60 * 60 * 1000 } },  // never zoom below 1h
+                        },
+                    },
                     scales: {
-                        x: { type: 'time', time: { tooltipFormat: 'PPp' }, grid: { color: 'rgba(255,255,255,0.04)' }},
+                        x: { type: 'time', time: { tooltipFormat: 'PPp' },
+                             grid: { color: 'var(--grid-line)' }},
                         y: yOpts,
                     }}
             });
