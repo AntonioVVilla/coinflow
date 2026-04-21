@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Request, HTTPException
 from bot.engine.runner import get_webhook_strategy, get_exchange_client, _execute_orders
+from bot.web.rate_limit import limiter
 
 router = APIRouter(prefix="/api/webhook", tags=["webhook"])
 
 
 @router.post("/tradingview")
+@limiter.limit("30/minute")
 async def tradingview_webhook(request: Request):
     strategy = get_webhook_strategy()
     if not strategy:

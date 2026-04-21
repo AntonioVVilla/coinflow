@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, Response, Cookie
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, Cookie
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from bot.web.deps import get_db
+from bot.web.rate_limit import limiter
 from bot.models import AuthConfig
 from bot.auth import (
     hash_password, verify_password, create_session, destroy_session,
@@ -30,7 +31,9 @@ async def auth_status(session_token: str | None = Cookie(default=None)):
 
 
 @router.post("/setup")
-async def setup_password(data: SetupData, db: AsyncSession = Depends(get_db),
+@limiter.limit("3/minute")
+async def setup_password(request: Request, data: SetupData,
+                         db: AsyncSession = Depends(get_db),
                          session_token: str | None = Cookie(default=None)):
     """Set initial password or change existing one."""
     if len(data.password) < 12:
@@ -59,7 +62,9 @@ async def setup_password(data: SetupData, db: AsyncSession = Depends(get_db),
 
 
 @router.post("/disable")
-async def disable_auth(data: LoginData, db: AsyncSession = Depends(get_db)):
+@limiter.limit("3/minute")
+async def disable_auth(request: Request, data: LoginData,
+                       db: AsyncSession = Depends(get_db)):
     """Remove password protection. Requires current password."""
     result = await db.execute(select(AuthConfig).limit(1))
     config = result.scalar_one_or_none()
@@ -76,7 +81,9 @@ async def disable_auth(data: LoginData, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login")
-async def login(data: LoginData, response: Response, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def login(request: Request, data: LoginData, response: Response,
+                db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(AuthConfig).limit(1))
     config = result.scalar_one_or_none()
 

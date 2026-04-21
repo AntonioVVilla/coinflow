@@ -5,6 +5,7 @@ uvicorn[standard]==0.34.0
 # Database
 sqlalchemy[asyncio]==2.0.36
 aiosqlite==0.20.0
+alembic==1.13.3
 
 # Exchange
 ccxt==4.5.48
@@ -14,6 +15,7 @@ apscheduler==3.10.4
 
 # Security
 cryptography==44.0.0
+slowapi==0.1.9
 
 # Notifications
 aiosmtplib==3.0.2
