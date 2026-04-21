@@ -1,0 +1,47 @@
+# LAN / sin dominio: expone el bot directamente en 8080 (HTTP, sin Caddy).
+# Ideal si ya tienes un reverse proxy delante o si pones una IP allowlist
+# en el firewall IONOS. Todo el trafico viaja en claro, asi que NO lo uses
+# con LIVE mode expuesto a internet abierto.
+#
+# Uso:
+#   docker compose -f docker-compose.lan.yml up -d --build
+#
+# El volumen `coinflow_bot-data` es el mismo que usa docker-compose.prod.yml
+# => comparte la base de datos cifrada y la secret.key con una instalacion
+# previa basada en el compose de produccion.
+
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PAPER_MODE=${PAPER_MODE:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    ports:
+      - "8080:8080"
+    volumes:
+      - bot-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          memory: 128M
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  bot-data:
