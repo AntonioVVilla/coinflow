@@ -59,9 +59,17 @@ body {
     color: var(--text);
     line-height: 1.6;
     font-size: 14px;
+    -webkit-tap-highlight-color: transparent;  /* no blue flash on iOS taps */
+    -webkit-text-size-adjust: 100%;
+    /* Reserve space for iOS bottom home indicator + the fixed tabbar. */
+    padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
-.container { max-width: 1400px; margin: 0 auto; padding: 0 24px; }
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 24px;
+}
 
 /* Header */
 header {
@@ -69,8 +77,21 @@ header {
     backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border);
     padding: 14px 0;
+    padding-top: calc(14px + env(safe-area-inset-top, 0));
     position: sticky; top: 0; z-index: 100;
 }
+.header-inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+.hdr-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.hdr-right { display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; }
+.hdr-nav { display: flex; gap: 4px; }
+
+/* The kill switch icon-only variant is hidden on desktop. */
+.kill-btn-icon { display: none; }
 
 /* Theme toggle button in the header */
 .theme-toggle {
@@ -361,96 +382,259 @@ label { display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 
 table tr[style*="cursor:pointer"]:hover { background: rgba(99, 102, 241, 0.08); }
 
 /* ============================================================
-   MOBILE RESPONSIVE
+   MOBILE BOTTOM TAB BAR + "Más" SHEET
+   Hidden by default; switched on under @media below.
    ============================================================ */
-@media (max-width: 768px) {
-    .container { padding: 0 12px; }
+.mobile-tabbar { display: none; }
+.sheet-backdrop { display: none; }
+.sheet { display: none; }
 
-    /* Header: stack vertically on mobile */
-    header { padding: 10px 0; }
-    header .container {
-        flex-direction: column;
-        gap: 10px;
+/* Drawers shown on mobile (trades filters sheet). */
+.filters-sheet { display: none; }
+
+/* ============================================================
+   MOBILE RESPONSIVE  (primary breakpoint: < 820px, tuned to
+   iPhone 17 Pro Max @ 430pt and Plus-sized phones in landscape
+   up to large tablets in portrait).
+   ============================================================ */
+@media (max-width: 820px) {
+    :root { font-size: 15px; }  /* slight bump for readability */
+
+    .container {
+        padding-left: max(16px, env(safe-area-inset-left));
+        padding-right: max(16px, env(safe-area-inset-right));
     }
-    .logo { font-size: 18px; }
 
-    /* Nav: horizontal scroll */
-    nav {
+    /* ---- Header: single slim row, no stacking ---- */
+    header {
+        padding: 10px 0;
+        padding-top: calc(10px + env(safe-area-inset-top, 0));
+    }
+    .header-inner { flex-wrap: nowrap; }
+    .hdr-left { gap: 8px; }
+    .hdr-right { gap: 8px; }
+    .logo { font-size: 17px; }
+    .badge { font-size: 9px; padding: 3px 7px; }
+
+    /* Hide the desktop top nav; the bottom tabbar takes over. */
+    .hdr-nav { display: none; }
+
+    /* Hide currency chips and theme toggle label from the header —
+       they move to the "Más" sheet + icon-only theme toggle stays. */
+    .hdr-currency { display: none; }
+
+    /* Kill switch becomes an icon-only round red button. */
+    .kill-btn {
+        width: 36px; height: 36px; padding: 0 !important; font-size: 0;
+        border-radius: 50%;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+    .kill-btn-label { display: none; }
+    .kill-btn-icon { display: inline; font-size: 16px; line-height: 1; color: #fff; }
+
+    /* ---- Bottom tab bar ---- */
+    .mobile-tabbar {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        position: fixed;
+        bottom: 0; left: 0; right: 0;
+        background: var(--header-bg);
+        backdrop-filter: blur(16px);
+        border-top: 1px solid var(--border);
+        padding-bottom: env(safe-area-inset-bottom, 0);
+        z-index: 95;
+        box-shadow: 0 -2px 12px rgba(0,0,0,.15);
+    }
+    .mtb {
+        background: none; border: none;
+        padding: 8px 4px 10px;
+        display: flex; flex-direction: column; align-items: center; gap: 3px;
+        color: var(--text-dim);
+        font-size: 11px; font-weight: 500;
+        min-height: 56px;  /* Apple HIG: 44pt min touch target */
+        cursor: pointer;
+        transition: color .15s;
+    }
+    .mtb-icon { font-size: 20px; line-height: 1; }
+    .mtb-label { letter-spacing: .2px; }
+    .mtb.active { color: var(--accent); }
+    .mtb:active { opacity: .6; }
+
+    /* Main content must clear the tabbar. */
+    main {
+        padding-bottom: calc(96px + env(safe-area-inset-bottom, 0));
+    }
+
+    /* ---- Bottom sheet ---- */
+    .sheet-backdrop {
+        display: block;
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,.45);
+        z-index: 140;
+    }
+    .sheet {
+        display: block;
+        position: fixed;
+        left: 0; right: 0; bottom: 0;
+        background: var(--bg-card);
+        border-top-left-radius: 20px;
+        border-top-right-radius: 20px;
+        padding: 6px 16px calc(16px + env(safe-area-inset-bottom, 0));
+        z-index: 150;
+        box-shadow: 0 -12px 32px rgba(0,0,0,.3);
+        max-height: 85vh; overflow-y: auto;
+    }
+    .sheet-handle {
+        width: 44px; height: 4px; border-radius: 2px;
+        background: var(--border-strong);
+        margin: 8px auto 14px;
+        cursor: pointer;
+    }
+    .sheet-title { font-size: 12px; color: var(--text-dim); text-transform: uppercase;
+                    letter-spacing: .5px; margin-bottom: 8px; padding: 0 4px; }
+    .sheet-row, .sheet-row-inline {
+        display: flex; align-items: center; gap: 14px;
         width: 100%;
-        overflow-x: auto;
-        scrollbar-width: none;
-        -webkit-overflow-scrolling: touch;
-        gap: 4px;
-        padding-bottom: 4px;
+        padding: 14px 10px;
+        background: none; border: none; border-radius: 12px;
+        color: var(--text); font-size: 15px; font-weight: 500;
+        text-align: left; cursor: pointer;
+        min-height: 48px;
     }
-    nav::-webkit-scrollbar { display: none; }
-    nav button {
-        white-space: nowrap;
+    .sheet-row.active { color: var(--accent); background: var(--bg-input); }
+    .sheet-row:hover { background: var(--bg-input); }
+    .sheet-row-danger { color: var(--red); }
+    .sheet-ico { width: 28px; text-align: center; font-size: 18px; }
+
+    /* ---- Grids: always single column on mobile, no exceptions ---- */
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; gap: 12px; }
+
+    /* ---- Cards: gentler padding + corners ---- */
+    .card { padding: 16px; border-radius: 16px; }
+    .card h3 { font-size: 11px; letter-spacing: .4px; }
+    .card .value { font-size: 26px; }
+    .card .sub { font-size: 12px; }
+
+    /* ---- Card header becomes stack with chips wrapping ---- */
+    .card-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .chip-group { flex-wrap: wrap; gap: 6px; }
+    .chip { font-size: 12px; padding: 6px 12px; min-height: 32px; }
+
+    /* ---- Touch-target friendly buttons ---- */
+    .btn {
+        min-height: 44px;
+        padding: 10px 16px;
+    }
+    .btn-sm { min-height: 36px; padding: 8px 12px; }
+    nav button, input, select, textarea { min-height: 44px; }
+    input, select, textarea {
+        font-size: 16px;  /* prevent iOS zoom */
+        padding: 12px 14px;
+        border-radius: 12px;
+    }
+
+    /* ---- Charts: mobile heights ---- */
+    .chart-card { min-height: 260px; }
+    .chart-container { min-height: 220px; height: 260px; }
+    .chart-container.small { min-height: 180px; height: 200px; }
+
+    /* ---- Table → card row on narrow screens ----
+       We keep the semantic <table> but stack cells vertically.
+       Requires <td data-label="..."> in HTML; we rely on column order
+       alignment for trades. */
+    .mobile-cards table thead { display: none; }
+    .mobile-cards table, .mobile-cards tbody, .mobile-cards tr, .mobile-cards td {
+        display: block; width: 100%;
+    }
+    .mobile-cards tr {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 12px 14px;
+        margin-bottom: 10px;
+    }
+    .mobile-cards td {
+        border: none !important;
+        padding: 4px 0 !important;
+        display: flex; justify-content: space-between; gap: 8px;
+        font-size: 13px;
+    }
+    .mobile-cards td::before {
+        content: attr(data-label);
+        color: var(--text-dim);
         font-size: 12px;
-        padding: 6px 12px;
         flex-shrink: 0;
     }
+    /* First cell acts as row header: bigger, no label */
+    .mobile-cards td:first-child {
+        font-weight: 600; font-size: 14px;
+        margin-bottom: 4px;
+        border-bottom: 1px dashed var(--border) !important;
+        padding-bottom: 6px !important;
+    }
+    .mobile-cards td:first-child::before { content: none; }
 
-    /* Card headers: stack filters */
-    .card-header {
-        flex-direction: column;
-        align-items: flex-start;
+    /* ---- Filter row: becomes a button that opens a sheet ---- */
+    .filter-row { display: none; }
+    .filter-row-mobile-btn {
+        display: flex !important;
+        justify-content: space-between;
+        align-items: center;
         gap: 8px;
     }
-    .chip-group { flex-wrap: wrap; gap: 3px; }
-    .chip { font-size: 10px; padding: 3px 8px; }
+    .filter-summary { font-size: 12px; color: var(--text-dim); }
 
-    /* KPI cards: smaller value font */
-    .card .value { font-size: 20px; }
-    .card h3 { font-size: 10px; }
-
-    /* Tables: smaller padding + font */
-    th, td { padding: 8px 10px; font-size: 11px; }
-    th { font-size: 9px; }
-    .pill { padding: 2px 6px; font-size: 9px; }
-
-    /* Charts: reduce min height on mobile */
-    .chart-card { min-height: 260px; }
-    .chart-container { min-height: 200px; }
-    .chart-container.small { min-height: 170px; }
-
-    /* Filters: stack in 2 cols */
-    .filter-row { grid-template-columns: 1fr 1fr; }
-
-    /* Section headers: stack */
-    .section-header {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 8px;
+    /* ---- Modals: transform into bottom sheets ---- */
+    .modal-overlay { align-items: flex-end !important; }
+    .modal {
+        max-width: 100% !important;
+        width: 100% !important;
+        border-radius: 20px 20px 0 0 !important;
+        margin: 0 !important;
+        max-height: 88vh;
+        padding-bottom: calc(20px + env(safe-area-inset-bottom, 0));
+        animation: slide-up .22s ease-out;
     }
-    .section-header h2 { font-size: 16px; }
+    @keyframes slide-up {
+        from { transform: translateY(40px); opacity: .6; }
+        to { transform: translateY(0); opacity: 1; }
+    }
 
-    /* Modal: full width on mobile */
-    .modal { max-width: 100% !important; border-radius: 12px; margin: 12px; }
-    .modal-body { padding: 14px; }
+    /* ---- Toasts ---- */
+    .toast-container {
+        top: auto;
+        bottom: calc(88px + env(safe-area-inset-bottom, 0));  /* above the tabbar */
+        right: 12px; left: 12px;
+    }
+    .toast { min-width: 0; max-width: 100%; font-size: 13px; padding: 12px 14px; }
 
-    /* KV list compacto */
-    .kv-grid { grid-template-columns: 1fr; }
-    .kv-list > div { padding: 6px 0; font-size: 12px; }
+    /* ---- Login / auth overlay ---- */
+    .auth-overlay {
+        padding: 0 !important;
+    }
+    .auth-box {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-height: 100vh;
+        border-radius: 0 !important;
+        padding: calc(env(safe-area-inset-top, 0) + 40px) 24px 24px !important;
+        display: flex; flex-direction: column; justify-content: center;
+    }
 
-    /* Kill button: compacto pero visible */
-    .kill-btn { padding: 6px 12px !important; font-size: 11px !important; }
+    /* ---- Performance card kv-grid on mobile ---- */
+    .kv { padding: 10px 0; }
+    .kv-value { font-size: 22px; }
 
-    /* WS indicator: hide text labels */
-    .ws-indicator { margin-left: 2px; }
-    .badge { font-size: 9px; padding: 2px 6px; }
-
-    /* Forms fit better */
-    input, select, textarea { font-size: 16px; /* prevent iOS zoom */ }
-
-    /* Toasts stack better */
-    .toast-container { top: auto; bottom: 16px; right: 10px; left: 10px; }
-    .toast { min-width: 0; max-width: 100%; font-size: 12px; }
+    /* ---- Section headers ---- */
+    .section-header { flex-direction: column; align-items: stretch; gap: 8px; }
+    .section-header h2 { font-size: 20px; }
 }
 
-@media (max-width: 480px) {
-    .grid-4, .grid-3 { grid-template-columns: 1fr 1fr; }
-    .card { padding: 14px; }
-    .card .value { font-size: 18px; }
+/* Extra tightening on narrow phones */
+@media (max-width: 380px) {
+    .container { padding: 0 12px; }
+    .logo { font-size: 15px; }
+    .mtb-label { font-size: 10px; }
+    .card .value { font-size: 22px; }
 }
 
