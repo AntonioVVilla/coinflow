@@ -25,6 +25,9 @@ class OrderRequest(BaseModel):
     amount: float  # Crypto amount (base currency)
     price: float | None = None  # Required for limit orders
     cost: float | None = None  # USD quote cost (used for market buys on Coinbase)
+    # Strategy-level context that the runner forwards to notifications without
+    # changing the exchange call. Currently used to tag SL/TP-initiated sells.
+    metadata: dict | None = None
 
 
 class OrderResult(BaseModel):

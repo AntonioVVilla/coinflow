@@ -10,7 +10,7 @@ from bot.web.rate_limit import limiter
 from bot.web.routes import (
     dashboard, strategies, trades, settings, webhook, auth, risk,
     notifications as notifs_route, websocket as ws_route, coinbase as cb_route,
-    backtest as bt_route,
+    backtest as bt_route, metrics as metrics_route,
 )
 from bot.auth import require_auth
 
@@ -42,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(notifs_route.router, dependencies=deps)
     app.include_router(cb_route.router, dependencies=deps)
     app.include_router(bt_route.router, dependencies=deps)
+    app.include_router(metrics_route.router, dependencies=deps)
     app.include_router(ws_route.router)  # WebSocket
 
     # Health check

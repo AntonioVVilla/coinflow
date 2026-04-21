@@ -170,6 +170,26 @@ async def _strategy_tick(strategy_name: str, symbol: str):
 
     try:
         ticker = await client.fetch_ticker(symbol)
+        # SL/TP check runs *before* the regular tick so the avg buy price is
+        # evaluated pre-tick. If a sell fires here, we skip the normal tick
+        # entirely to avoid emitting a buy right after liquidating.
+        sl_tp_orders: list[OrderRequest] = []
+        if hasattr(strategy, "evaluate_sl_tp"):
+            sl_tp_orders = strategy.evaluate_sl_tp(ticker)
+        if sl_tp_orders:
+            results = await _execute_orders(strategy_name, sl_tp_orders)
+            for req, res in zip(sl_tp_orders, results):
+                if res.get("ok") and req.metadata:
+                    await notify("sl_tp_triggered", {
+                        "strategy": strategy_name,
+                        "symbol": req.symbol,
+                        "kind": req.metadata.get("trigger"),
+                        "price": res.get("price"),
+                        "avg_buy_price": req.metadata.get("avg_buy_price"),
+                        "amount": req.amount,
+                    })
+            return
+
         orders = await strategy.tick(ticker)
         await _execute_orders(strategy_name, orders)
     except Exception as e:

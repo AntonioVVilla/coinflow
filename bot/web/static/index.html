@@ -14,7 +14,19 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1/dist/chartjs-chart-financial.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script>
+      // Pre-Alpine: pick the theme before paint so we never flash the wrong one.
+      (function () {
+        try {
+          var saved = localStorage.getItem('cryptobot.theme');
+          var initial = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+          document.documentElement.dataset.theme = initial;
+        } catch (e) { document.documentElement.dataset.theme = 'dark'; }
+      })();
+    </script>
 </head>
 <body x-data="app()" x-init="init()">
 
@@ -68,6 +80,11 @@
                 <button class="chip" :class="currency === 'USD' && 'active'" @click="setCurrency('USD')">USD</button>
                 <button class="chip" :class="currency === 'EUR' && 'active'" @click="setCurrency('EUR')">EUR</button>
             </div>
+            <button class="btn btn-sm btn-outline theme-toggle" @click="toggleTheme()"
+                    :title="theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'"
+                    :aria-label="theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'">
+                <span x-text="theme === 'dark' ? '☀' : '☾'"></span>
+            </button>
             <nav>
                 <button :class="page === 'dashboard' && 'active'" @click="setPage('dashboard')">Dashboard</button>
                 <button :class="page === 'strategies' && 'active'" @click="setPage('strategies')">Estrategias</button>
@@ -117,6 +134,77 @@
                 <div class="value" x-text="Object.keys(dashboard.strategies || {}).length"></div>
                 <div class="sub" x-text="dashboard.recent_trades?.length + ' trades recientes'"></div>
             </div>
+        </div>
+
+        <!-- ============= Performance card (metrics.summary) ============= -->
+        <div class="card" style="margin-top:20px" x-data="{metricsDays: 30}">
+            <div class="card-header" style="display:flex;align-items:center;gap:12px;justify-content:space-between">
+                <h3 style="margin:0">Rendimiento ajustado a riesgo</h3>
+                <div class="chip-group">
+                    <button class="chip" :class="metricsDays === 7 && 'active'" @click="metricsDays = 7; loadMetrics(7)">7d</button>
+                    <button class="chip" :class="metricsDays === 30 && 'active'" @click="metricsDays = 30; loadMetrics(30)">30d</button>
+                    <button class="chip" :class="metricsDays === 90 && 'active'" @click="metricsDays = 90; loadMetrics(90)">90d</button>
+                </div>
+            </div>
+            <template x-if="metrics?.portfolio">
+                <div>
+                    <div class="grid grid-3" style="margin-top:8px">
+                        <div class="kv">
+                            <div class="kv-label">Sharpe</div>
+                            <div class="kv-value"
+                                 x-text="metrics.portfolio.sharpe === null ? '—' : metrics.portfolio.sharpe.toFixed(2)"
+                                 :title="metrics.portfolio.insufficient_data ? 'Necesitas al menos 14 días de snapshots diarios para un Sharpe fiable' : ''"></div>
+                        </div>
+                        <div class="kv">
+                            <div class="kv-label">Sortino</div>
+                            <div class="kv-value"
+                                 x-text="metrics.portfolio.sortino === null ? '—' : metrics.portfolio.sortino.toFixed(2)"></div>
+                        </div>
+                        <div class="kv">
+                            <div class="kv-label">Max drawdown</div>
+                            <div class="kv-value" x-text="metrics.portfolio.max_drawdown_pct.toFixed(2) + '%'"></div>
+                        </div>
+                    </div>
+                    <div class="sub" style="margin-top:6px"
+                         x-text="'Muestras diarias: ' + metrics.portfolio.n_samples + (metrics.portfolio.insufficient_data ? ' (insuficientes para anualizar)' : '')"></div>
+
+                    <template x-if="metrics.pnl?.by_key && Object.keys(metrics.pnl.by_key).length">
+                        <div style="margin-top:16px">
+                            <h4 style="margin:0 0 8px 0">P&amp;L realizado por estrategia</h4>
+                            <table class="compact">
+                                <thead><tr>
+                                    <th>Estrategia / Par</th>
+                                    <th>Realized P&amp;L</th>
+                                    <th>Trades</th>
+                                    <th>Wins / Losses</th>
+                                    <th>Hold medio</th>
+                                </tr></thead>
+                                <tbody>
+                                <template x-for="(s, key) in metrics.pnl.by_key" :key="key">
+                                    <tr>
+                                        <td x-text="key"></td>
+                                        <td :style="{color: pnlColor(s.realized_pnl)}" x-text="money(s.realized_pnl)"></td>
+                                        <td x-text="s.trades_matched"></td>
+                                        <td><span x-text="s.wins + ' / ' + s.losses"></span></td>
+                                        <td x-text="formatHold(s.avg_hold_seconds)"></td>
+                                    </tr>
+                                </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </template>
+
+                    <template x-if="metrics.pnl?.global?.unmatched_sell_amount > 0">
+                        <div class="sub" style="margin-top:10px;color:var(--warn)">
+                            ⚠ <span x-text="metrics.pnl.global.unmatched_sell_amount.toFixed(8)"></span>
+                            unidades vendidas sin buy previo (posición preexistente o señal externa).
+                        </div>
+                    </template>
+                </div>
+            </template>
+            <template x-if="!metrics?.portfolio">
+                <div class="sub">Cargando métricas…</div>
+            </template>
         </div>
 
         <div class="grid grid-2">
@@ -423,17 +511,43 @@
                         </div>
                     </template>
                     <template x-if="s.name === 'dca'">
-                        <div class="grid grid-2">
-                            <div class="form-group"><label>Simbolo</label>
-                                <select x-model="s.symbol" @change="saveStrategy(s)">
-                                    <template x-for="sym in supportedSymbols" :key="sym">
-                                        <option :value="sym" x-text="sym"></option>
-                                    </template>
-                                </select></div>
-                            <div class="form-group"><label>Monto USD por compra</label>
-                                <input type="number" x-model.number="s.params.amount_usd" @change="saveStrategy(s)"></div>
-                            <div class="form-group"><label>Intervalo (horas)</label>
-                                <input type="number" x-model.number="s.params.interval_hours" @change="saveStrategy(s)"></div>
+                        <div>
+                            <div class="grid grid-2">
+                                <div class="form-group"><label>Simbolo</label>
+                                    <select x-model="s.symbol" @change="saveStrategy(s)">
+                                        <template x-for="sym in supportedSymbols" :key="sym">
+                                            <option :value="sym" x-text="sym"></option>
+                                        </template>
+                                    </select></div>
+                                <div class="form-group"><label>Monto USD por compra</label>
+                                    <input type="number" x-model.number="s.params.amount_usd" @change="saveStrategy(s)"></div>
+                                <div class="form-group"><label>Intervalo (horas)</label>
+                                    <input type="number" x-model.number="s.params.interval_hours" @change="saveStrategy(s)"></div>
+                            </div>
+                            <details style="margin-top:8px" class="form-group">
+                                <summary style="cursor:pointer">Stop-loss / Take-profit (opcional)</summary>
+                                <div class="grid grid-2" style="margin-top:8px">
+                                    <div class="form-group">
+                                        <label>Stop-loss %
+                                            <span class="help" title="Si el precio cae más que este % respecto al precio medio de compra, se vende la posición completa. 0 = deshabilitado.">ⓘ</span>
+                                        </label>
+                                        <input type="number" min="0" max="50" step="0.5"
+                                               x-model.number="s.params.stop_loss_pct" @change="saveStrategy(s)"
+                                               placeholder="0 = deshabilitado">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Take-profit %
+                                            <span class="help" title="Si el precio sube más que este % respecto al precio medio, se vende la posición completa. 0 = deshabilitado.">ⓘ</span>
+                                        </label>
+                                        <input type="number" min="0" max="50" step="0.5"
+                                               x-model.number="s.params.take_profit_pct" @change="saveStrategy(s)"
+                                               placeholder="0 = deshabilitado">
+                                    </div>
+                                </div>
+                                <p class="sub" style="margin:4px 0 0 0">
+                                    Aplicado contra el precio medio histórico. Sólo activo mientras la posición neta sea positiva; tras disparar hay 5 minutos de enfriamiento para evitar re-ventas.
+                                </p>
+                            </details>
                         </div>
                     </template>
                     <template x-if="s.name === 'webhook'">
@@ -514,14 +628,35 @@
             </div>
             <div class="card no-pad" style="margin-top:16px">
                 <div class="table-wrap">
-                <table>
+                <table class="sortable">
                     <thead><tr>
-                        <th>Fecha</th><th>Estrategia</th><th>Par</th><th>Lado</th><th>Tipo</th>
-                        <th>Cantidad</th><th>Precio</th><th>Total</th><th>Fee</th><th>Estado</th>
+                        <th class="sortable-col" @click="sortTrades('created_at')">
+                            Fecha <span class="sort-ind" x-text="sortIndicator('created_at')"></span>
+                        </th>
+                        <th class="sortable-col" @click="sortTrades('strategy')">
+                            Estrategia <span class="sort-ind" x-text="sortIndicator('strategy')"></span>
+                        </th>
+                        <th class="sortable-col" @click="sortTrades('symbol')">
+                            Par <span class="sort-ind" x-text="sortIndicator('symbol')"></span>
+                        </th>
+                        <th class="sortable-col" @click="sortTrades('side')">
+                            Lado <span class="sort-ind" x-text="sortIndicator('side')"></span>
+                        </th>
+                        <th>Tipo</th>
+                        <th class="sortable-col" @click="sortTrades('amount')">
+                            Cantidad <span class="sort-ind" x-text="sortIndicator('amount')"></span>
+                        </th>
+                        <th class="sortable-col" @click="sortTrades('price')">
+                            Precio <span class="sort-ind" x-text="sortIndicator('price')"></span>
+                        </th>
+                        <th class="sortable-col" @click="sortTrades('cost')">
+                            Total <span class="sort-ind" x-text="sortIndicator('cost')"></span>
+                        </th>
+                        <th>Fee</th><th>Estado</th>
                     </tr></thead>
                     <tbody>
                         <template x-for="t in tradesData.trades" :key="t.id">
-                            <tr @click="showTradeDetail(t)" style="cursor:pointer">
+                            <tr @click="showTradeDetail(t)" tabindex="0" style="cursor:pointer">
                                 <td x-text="new Date(t.created_at).toLocaleString()"></td>
                                 <td><span class="tag" x-text="t.strategy"></span></td>
                                 <td x-text="t.symbol"></td>

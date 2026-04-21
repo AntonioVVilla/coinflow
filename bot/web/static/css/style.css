@@ -1,4 +1,5 @@
-:root {
+:root,
+[data-theme="dark"] {
     --bg: #0a0c12;
     --bg-card: #161922;
     --bg-card-hover: #1c1f2b;
@@ -15,9 +16,39 @@
     --red: #ef4444;
     --red-dim: rgba(239, 68, 68, 0.12);
     --yellow: #eab308;
+    --warn: #eab308;
     --blue: #3b82f6;
     --purple: #a855f7;
     --orange: #f97316;
+    --shadow: 0 4px 20px rgba(0,0,0,.35);
+    --header-bg: rgba(22, 25, 34, 0.85);
+    --grid-line: rgba(255,255,255,.06);
+}
+
+[data-theme="light"] {
+    --bg: #f4f5f9;
+    --bg-card: #ffffff;
+    --bg-card-hover: #f9fafc;
+    --bg-input: #eef0f5;
+    --border: #dfe2ec;
+    --border-strong: #c8ccd8;
+    --text: #1b1f2a;
+    --text-dim: #5b6271;
+    --text-faint: #8c92a3;
+    --accent: #4f52e8;
+    --accent-hover: #6f73ee;
+    --green: #18a558;
+    --green-dim: rgba(24, 165, 88, 0.12);
+    --red: #d9342b;
+    --red-dim: rgba(217, 52, 43, 0.12);
+    --yellow: #c9a211;
+    --warn: #c9a211;
+    --blue: #2765d6;
+    --purple: #8a3bd3;
+    --orange: #d96a11;
+    --shadow: 0 4px 16px rgba(18, 22, 34, .08);
+    --header-bg: rgba(255, 255, 255, 0.9);
+    --grid-line: rgba(18, 22, 34, .08);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -34,12 +65,37 @@ body {
 
 /* Header */
 header {
-    background: rgba(22, 25, 34, 0.85);
+    background: var(--header-bg);
     backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border);
     padding: 14px 0;
     position: sticky; top: 0; z-index: 100;
 }
+
+/* Theme toggle button in the header */
+.theme-toggle {
+    width: 32px; height: 32px; padding: 0; display: inline-flex;
+    align-items: center; justify-content: center; font-size: 14px;
+}
+
+/* Sortable table columns */
+table.sortable th.sortable-col { cursor: pointer; user-select: none; white-space: nowrap; }
+table.sortable th.sortable-col:hover { color: var(--text); }
+table.sortable .sort-ind { display: inline-block; width: 10px; color: var(--accent); font-weight: 700; }
+table tr[tabindex="0"]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* Compact KV grid used in the new Performance card */
+.kv { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; }
+.kv-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; }
+.kv-value { font-size: 24px; font-weight: 700; color: var(--text); }
+
+/* Compact tables inside cards */
+table.compact { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.compact th, table.compact td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+table.compact th { color: var(--text-dim); font-weight: 500; }
+
+/* Help tooltip marker (ⓘ) */
+.help { color: var(--text-faint); cursor: help; font-size: 11px; margin-left: 4px; }
 header .container { display: flex; justify-content: space-between; align-items: center; }
 .logo { font-size: 20px; font-weight: 700; background: linear-gradient(135deg, var(--accent), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 nav { display: flex; gap: 4px; }

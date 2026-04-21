@@ -3,12 +3,24 @@ import io
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select, desc, func, and_
+from sqlalchemy import select, desc, asc, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from bot.web.deps import get_db
 from bot.models import Trade
 
 router = APIRouter(prefix="/api/trades", tags=["trades"])
+
+# Allow-list of sortable columns. Keeps the API safe from arbitrary column
+# injection and gives the UI a fixed contract.
+_SORTABLE_COLUMNS = {
+    "created_at": Trade.created_at,
+    "cost": Trade.cost,
+    "strategy": Trade.strategy,
+    "side": Trade.side,
+    "symbol": Trade.symbol,
+    "amount": Trade.amount,
+    "price": Trade.price,
+}
 
 
 def _build_filters(strategy, symbol, side, since_hours):
@@ -25,6 +37,11 @@ def _build_filters(strategy, symbol, side, since_hours):
     return and_(*conds) if conds else None
 
 
+def _order_clause(order_by: str, order_dir: str):
+    col = _SORTABLE_COLUMNS.get(order_by, Trade.created_at)
+    return asc(col) if order_dir == "asc" else desc(col)
+
+
 @router.get("")
 async def list_trades(
     page: int = Query(1, ge=1),
@@ -33,6 +50,8 @@ async def list_trades(
     symbol: str | None = None,
     side: str | None = None,
     since_hours: int | None = None,
+    order_by: str = Query("created_at", pattern="^(created_at|cost|strategy|side|symbol|amount|price)$"),
+    order_dir: str = Query("desc", pattern="^(asc|desc)$"),
     db: AsyncSession = Depends(get_db),
 ):
     filters = _build_filters(strategy, symbol, side, since_hours)
@@ -45,7 +64,9 @@ async def list_trades(
 
     total = (await db.execute(count_query)).scalar() or 0
     offset = (page - 1) * limit
-    result = await db.execute(query.order_by(desc(Trade.created_at)).offset(offset).limit(limit))
+    result = await db.execute(
+        query.order_by(_order_clause(order_by, order_dir)).offset(offset).limit(limit)
+    )
     trades = result.scalars().all()
 
     return {
@@ -69,6 +90,8 @@ async def list_trades(
         "total": total,
         "page": page,
         "pages": (total + limit - 1) // limit,
+        "order_by": order_by,
+        "order_dir": order_dir,
     }
 
 
