@@ -2,7 +2,8 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="format-detection" content="telephone=no">
     <title>CryptoBot</title>
     <link rel="manifest" href="/static/manifest.json">
     <link rel="icon" type="image/svg+xml" href="/static/icon-192.svg">
@@ -66,17 +67,18 @@
 </div>
 
 <header x-show="!authRequired || authenticated">
-    <div class="container">
-        <div style="display:flex;align-items:center;gap:12px">
+    <div class="container header-inner">
+        <!-- Left: brand + state -->
+        <div class="hdr-left">
             <span class="logo">CryptoBot</span>
             <span class="badge" :class="dashboard.paper_mode ? 'badge-paper' : 'badge-live'"
                   x-text="dashboard.paper_mode ? 'PAPER' : 'LIVE'"></span>
             <span class="ws-indicator" :class="wsConnected ? 'ws-on' : 'ws-off'"
                   :title="wsConnected ? 'Conectado en tiempo real' : 'Sin conexion en vivo'"></span>
         </div>
-        <div style="display:flex;align-items:center;gap:12px">
-            <button class="btn btn-sm btn-danger kill-btn" @click="triggerKillSwitch()">KILL SWITCH</button>
-            <div class="chip-group">
+        <!-- Right: actions (currency chip group hidden on mobile, moved to "Más" sheet) -->
+        <div class="hdr-right">
+            <div class="chip-group hdr-currency">
                 <button class="chip" :class="currency === 'USD' && 'active'" @click="setCurrency('USD')">USD</button>
                 <button class="chip" :class="currency === 'EUR' && 'active'" @click="setCurrency('EUR')">EUR</button>
             </div>
@@ -85,7 +87,11 @@
                     :aria-label="theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'">
                 <span x-text="theme === 'dark' ? '☀' : '☾'"></span>
             </button>
-            <nav>
+            <button class="btn btn-sm btn-danger kill-btn" @click="triggerKillSwitch()">
+                <span class="kill-btn-label">KILL SWITCH</span>
+                <span class="kill-btn-icon" aria-hidden="true">⏻</span>
+            </button>
+            <nav class="hdr-nav">
                 <button :class="page === 'dashboard' && 'active'" @click="setPage('dashboard')">Dashboard</button>
                 <button :class="page === 'strategies' && 'active'" @click="setPage('strategies')">Estrategias</button>
                 <button :class="page === 'trades' && 'active'" @click="setPage('trades')">Operaciones</button>
@@ -97,6 +103,65 @@
         </div>
     </div>
 </header>
+
+<!-- ======================================================
+     Mobile bottom tab bar. Only visible on narrow screens.
+     Mirrors the top-nav pages 1:1, except "Más" opens a
+     bottom sheet with the less-used tabs + Salir.
+     ====================================================== -->
+<nav class="mobile-tabbar" x-show="!authRequired || authenticated" aria-label="Navegación principal">
+    <button class="mtb" :class="page === 'dashboard' && 'active'" @click="setPage('dashboard')">
+        <span class="mtb-icon" aria-hidden="true">📊</span>
+        <span class="mtb-label">Inicio</span>
+    </button>
+    <button class="mtb" :class="page === 'strategies' && 'active'" @click="setPage('strategies')">
+        <span class="mtb-icon" aria-hidden="true">🤖</span>
+        <span class="mtb-label">Estrategias</span>
+    </button>
+    <button class="mtb" :class="page === 'trades' && 'active'" @click="setPage('trades')">
+        <span class="mtb-icon" aria-hidden="true">📑</span>
+        <span class="mtb-label">Ops</span>
+    </button>
+    <button class="mtb" :class="page === 'account' && 'active'" @click="setPage('account')">
+        <span class="mtb-icon" aria-hidden="true">👛</span>
+        <span class="mtb-label">Cuenta</span>
+    </button>
+    <button class="mtb" :class="moreSheetOpen && 'active'" @click="moreSheetOpen = true">
+        <span class="mtb-icon" aria-hidden="true">⋯</span>
+        <span class="mtb-label">Más</span>
+    </button>
+</nav>
+
+<!-- "Más" bottom sheet -->
+<div class="sheet-backdrop" x-show="moreSheetOpen" @click="moreSheetOpen = false" x-transition.opacity x-cloak></div>
+<div class="sheet" x-show="moreSheetOpen" x-transition x-cloak>
+    <div class="sheet-handle" @click="moreSheetOpen = false" aria-hidden="true"></div>
+    <div class="sheet-title">Opciones</div>
+    <button class="sheet-row" :class="page === 'risk' && 'active'" @click="setPage('risk'); moreSheetOpen = false">
+        <span class="sheet-ico" aria-hidden="true">🛡</span>
+        <span>Gestión de riesgo</span>
+    </button>
+    <button class="sheet-row" :class="page === 'settings' && 'active'" @click="setPage('settings'); moreSheetOpen = false">
+        <span class="sheet-ico" aria-hidden="true">⚙</span>
+        <span>Configuración</span>
+    </button>
+    <div class="sheet-row-inline">
+        <span class="sheet-ico" aria-hidden="true">💱</span>
+        <span style="flex:1">Moneda</span>
+        <div class="chip-group">
+            <button class="chip" :class="currency === 'USD' && 'active'" @click="setCurrency('USD')">USD</button>
+            <button class="chip" :class="currency === 'EUR' && 'active'" @click="setCurrency('EUR')">EUR</button>
+        </div>
+    </div>
+    <button class="sheet-row sheet-row-danger" @click="doLogout(); moreSheetOpen = false" x-show="authRequired">
+        <span class="sheet-ico" aria-hidden="true">🚪</span>
+        <span>Cerrar sesión</span>
+    </button>
+    <button class="sheet-row" @click="moreSheetOpen = false">
+        <span class="sheet-ico" aria-hidden="true">✕</span>
+        <span>Cancelar</span>
+    </button>
+</div>
 
 <main class="container" x-show="!authRequired || authenticated">
 
@@ -625,8 +690,52 @@
                     <div class="filter-item"><label>&nbsp;</label>
                         <button class="btn btn-sm btn-outline" @click="clearFilters()">Limpiar</button></div>
                 </div>
+                <!-- Mobile: filter button that opens a sheet with the same controls. -->
+                <button class="btn btn-outline filter-row-mobile-btn" @click="filtersSheetOpen = true"
+                        style="display:none;width:100%">
+                    <span>Filtros</span>
+                    <span class="filter-summary sub" x-text="activeFiltersLabel()"></span>
+                </button>
             </div>
-            <div class="card no-pad" style="margin-top:16px">
+
+            <!-- Mobile filters sheet -->
+            <div class="sheet-backdrop" x-show="filtersSheetOpen" @click="filtersSheetOpen = false" x-transition.opacity x-cloak></div>
+            <div class="sheet" x-show="filtersSheetOpen" x-transition x-cloak>
+                <div class="sheet-handle" @click="filtersSheetOpen = false" aria-hidden="true"></div>
+                <div class="sheet-title">Filtros</div>
+                <div class="form-group"><label>Periodo</label>
+                    <select x-model.number="tradeFilters.since_hours" @change="loadTradesAndStats()">
+                        <option :value="24">Últimas 24 horas</option>
+                        <option :value="168">Últimos 7 días</option>
+                        <option :value="720">Últimos 30 días</option>
+                        <option :value="8760">Último año</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Estrategia</label>
+                    <select x-model="tradeFilters.strategy" @change="loadTrades()">
+                        <option value="">Todas</option><option value="grid">Grid</option>
+                        <option value="dca">DCA</option><option value="webhook">Webhook</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Par</label>
+                    <select x-model="tradeFilters.symbol" @change="loadTrades()">
+                        <option value="">Todos</option>
+                        <template x-for="sym in supportedSymbols" :key="sym">
+                            <option :value="sym" x-text="sym"></option>
+                        </template>
+                    </select>
+                </div>
+                <div class="form-group"><label>Lado</label>
+                    <select x-model="tradeFilters.side" @change="loadTrades()">
+                        <option value="">Todos</option><option value="buy">Buy</option><option value="sell">Sell</option>
+                    </select>
+                </div>
+                <div style="display:flex;gap:10px;margin-top:12px">
+                    <button class="btn btn-outline" style="flex:1" @click="clearFilters(); filtersSheetOpen = false">Limpiar</button>
+                    <button class="btn btn-primary" style="flex:1" @click="filtersSheetOpen = false">Aplicar</button>
+                </div>
+            </div>
+            <div class="card no-pad mobile-cards" style="margin-top:16px">
                 <div class="table-wrap">
                 <table class="sortable">
                     <thead><tr>
@@ -657,16 +766,16 @@
                     <tbody>
                         <template x-for="t in tradesData.trades" :key="t.id">
                             <tr @click="showTradeDetail(t)" tabindex="0" style="cursor:pointer">
-                                <td x-text="new Date(t.created_at).toLocaleString()"></td>
-                                <td><span class="tag" x-text="t.strategy"></span></td>
-                                <td x-text="t.symbol"></td>
-                                <td><span class="pill" :class="'pill-' + t.side" x-text="t.side.toUpperCase()"></span></td>
-                                <td x-text="t.order_type"></td>
-                                <td x-text="t.amount.toFixed(8)"></td>
-                                <td x-text="money(t.price)"></td>
-                                <td x-text="money(t.cost)"></td>
-                                <td x-text="money(t.fee, 4)"></td>
-                                <td><span class="pill pill-status" x-text="t.status"></span></td>
+                                <td data-label="Fecha" x-text="new Date(t.created_at).toLocaleString()"></td>
+                                <td data-label="Estrategia"><span class="tag" x-text="t.strategy"></span></td>
+                                <td data-label="Par" x-text="t.symbol"></td>
+                                <td data-label="Lado"><span class="pill" :class="'pill-' + t.side" x-text="t.side.toUpperCase()"></span></td>
+                                <td data-label="Tipo" x-text="t.order_type"></td>
+                                <td data-label="Cantidad" x-text="t.amount.toFixed(8)"></td>
+                                <td data-label="Precio" x-text="money(t.price)"></td>
+                                <td data-label="Total" x-text="money(t.cost)"></td>
+                                <td data-label="Fee" x-text="money(t.fee, 4)"></td>
+                                <td data-label="Estado"><span class="pill pill-status" x-text="t.status"></span></td>
                             </tr>
                         </template>
                     </tbody>

@@ -43,6 +43,8 @@ function app() {
         metrics: null,
         metricsDaysSelected: 30,
         tradeSort: { order_by: 'created_at', order_dir: 'desc' },
+        moreSheetOpen: false,     // mobile bottom-tabbar "Más" sheet
+        filtersSheetOpen: false,  // mobile trades filters sheet
         tradeDetail: null,
         tickResult: null,
         diagnostic: null,
@@ -522,6 +524,20 @@ function app() {
         },
         async loadTradesAndStats() { await Promise.all([this.loadTrades(), this.loadStats()]); },
         clearFilters() { this.tradeFilters = { page: 1, strategy: '', symbol: '', side: '', since_hours: 168 }; this.loadTradesAndStats(); },
+        activeFiltersLabel() {
+            // Short summary shown inside the mobile "Filtros" button so the
+            // user knows what's applied without opening the sheet.
+            const f = this.tradeFilters;
+            const parts = [];
+            if (f.since_hours === 24) parts.push('24h');
+            else if (f.since_hours === 168) parts.push('7d');
+            else if (f.since_hours === 720) parts.push('30d');
+            else if (f.since_hours === 8760) parts.push('1a');
+            if (f.strategy) parts.push(f.strategy);
+            if (f.symbol) parts.push(f.symbol);
+            if (f.side) parts.push(f.side);
+            return parts.join(' · ');
+        },
         async exportCsv() {
             const params = new URLSearchParams();
             if (this.tradeFilters.strategy) params.set('strategy', this.tradeFilters.strategy);
